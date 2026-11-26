@@ -3,9 +3,6 @@
 -- Tenant isolation is enforced in src/lib/db.ts (every query filters organization_id)
 -- and by Postgres RLS in production.
 
-pragma journal_mode = WAL;
-pragma foreign_keys = ON;
-
 create table if not exists profiles (
   id text primary key,
   email text not null unique,
@@ -35,20 +32,6 @@ create table if not exists password_resets (
 );
 create index if not exists password_resets_token_idx on password_resets(token_hash);
 
-create table if not exists org_invites (
-  id text primary key,
-  organization_id text not null references organizations(id) on delete cascade,
-  email text not null,
-  role text not null default 'member' check (role in ('owner','admin','member')),
-  token_hash text not null unique,
-  invited_by text references profiles(id) on delete set null,
-  expires_at text not null,
-  accepted_at text,
-  created_at text not null
-);
-create index if not exists org_invites_org_idx on org_invites(organization_id);
-create index if not exists org_invites_email_idx on org_invites(email);
-
 create table if not exists organizations (
   id text primary key,
   name text not null,
@@ -63,6 +46,20 @@ create table if not exists organizations (
   created_at text not null,
   updated_at text not null
 );
+
+create table if not exists org_invites (
+  id text primary key,
+  organization_id text not null references organizations(id) on delete cascade,
+  email text not null,
+  role text not null default 'member' check (role in ('owner','admin','member')),
+  token_hash text not null unique,
+  invited_by text references profiles(id) on delete set null,
+  expires_at text not null,
+  accepted_at text,
+  created_at text not null
+);
+create index if not exists org_invites_org_idx on org_invites(organization_id);
+create index if not exists org_invites_email_idx on org_invites(email);
 
 create table if not exists organization_members (
   id text primary key,

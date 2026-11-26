@@ -1,15 +1,28 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
+import { pgBridge, isPostgresEngine } from "./pg-sync";
 
 /**
  * Data layer
  * ----------
- * Runtime engine for development & demo: SQLite (better-sqlite3).
- * Production engine: Supabase Postgres — schema + RLS policies live in
- * `sql/schema.postgres.sql`. The Postgres adapter is intentionally NOT wired
- * until Supabase credentials are supplied, so nothing here can silently
- * pretend Postgres is in use. See README → "Switching to Supabase".
+ * Two engines behind one synchronous API:
+ *
+ *   • SQLite (better-sqlite3)  — default for local development and the demo.
+ *   • PostgreSQL               — selected automatically when `DATABASE_URL` is set
+ *                               (or `BIZPILOT_ENGINE=postgres`), using
+ *                               `src/lib/pg-sync.ts`. The real connection lives in
+ *                               `scripts/pg-worker.mjs`; the main thread blocks on
+ *                               Atomics so `all/get/run/tx` stay synchronous and
+ *                               all 300+ existing call sites keep working.
+ *
+ * `sql/schema.sqlite.sql` is deliberately portable SQL: it is applied verbatim to
+ * both engines (no PRAGMA, no SQLite-only functions, no forward foreign-key
+ * references), so the two deployments cannot drift.
+ *
+ * Tenant isolation in the running app is enforced by `organization_id` on every
+ * query. Postgres additionally carries RLS policies (see `sql/rls.postgres.sql`)
+ * for anything connecting with a non-owner role, e.g. a browser anon key.
  */
 
 export type Row = Record<string, unknown>;
@@ -20,6 +33,10 @@ const DB_FILE = process.env.BIZPILOT_DB_FILE ?? path.join(DB_DIR, "bizpilot.db")
 
 type GlobalCache = { __bizpilotDb?: Database.Database };
 const g = globalThis as unknown as GlobalCache;
+
+export function engineName(): "postgres" | "sqlite" {
+  return isPostgresEngine() ? "postgres" : "sqlite";
+}
 
 function readSql(file: string): string {
   const p = path.join(process.cwd(), "sql", file);
@@ -47,34 +64,62 @@ export function db(): Database.Database {
 }
 
 /* ------------------------------------------------------------------ */
-/* Query helpers                                                       */
+/* Query helpers — identical surface on both engines                   */
 /* ------------------------------------------------------------------ */
 
 export function all<T = Row>(sql: string, params: Params = []): T[] {
+  if (isPostgresEngine()) return pgBridge().all<T>(sql, params);
   return db().prepare(sql).all(...params) as T[];
 }
 
 export function get<T = Row>(sql: string, params: Params = []): T | undefined {
+  if (isPostgresEngine()) return pgBridge().get<T>(sql, params);
   return db().prepare(sql).get(...params) as T | undefined;
 }
 
-export function run(sql: string, params: Params = []): Database.RunResult {
-  return db().prepare(sql).run(...params);
+export function run(sql: string, params: Params = []): { changes: number; lastInsertRowid: number } {
+  if (isPostgresEngine()) return pgBridge().run(sql, params);
+  const res = db().prepare(sql).run(...params);
+  return { changes: res.changes, lastInsertRowid: Number(res.lastInsertRowid) };
 }
 
 export function tx<T>(fn: () => T): T {
-  const database = db();
-  const wrapped = database.transaction(fn);
+  if (isPostgresEngine()) return pgBridge().transaction(fn);
+  const wrapped = db().transaction(fn);
   return wrapped() as T;
 }
 
 export function count(sql: string, params: Params = []): number {
   const row = get<{ c: number }>(sql, params);
-  return row?.c ?? 0;
+  const value = row?.c ?? 0;
+  return typeof value === "number" ? value : Number(value ?? 0);
 }
 
-/** Test helper: wipe every table between test cases. */
+/** Raw multi-statement execution (migrations, maintenance). */
+export function exec(sql: string): void {
+  if (isPostgresEngine()) {
+    pgBridge().exec(sql);
+    return;
+  }
+  db().exec(sql);
+}
+
+/**
+ * Test helper: wipe every table between test cases.
+ * Works on both engines so the same suite can run against real Postgres.
+ */
 export function resetDatabaseForTests(): void {
+  if (isPostgresEngine()) {
+    const tables = all<{ table_name: string }>(
+      `select table_name from information_schema.tables
+        where table_schema = 'public' and table_type = 'BASE TABLE' and table_name <> 'plans'`
+    );
+    if (tables.length === 0) return;
+    const list = tables.map((t) => `"${t.table_name}"`).join(", ");
+    exec(`truncate table ${list} restart identity cascade`);
+    return;
+  }
+
   const database = db();
   const tables = all<{ name: string }>(
     "select name from sqlite_master where type='table' and name not in ('plans')"

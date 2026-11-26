@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  sqlite:
+    name: SQLite engine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit
+      - run: npx eslint .
+      - run: npm run db:migrate
+      - run: npx vitest run
+
+  postgres:
+    name: PostgreSQL engine
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: bizpilot
+          POSTGRES_USER: bizpilot
+          POSTGRES_PASSWORD: bizpilot
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U bizpilot -d bizpilot"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://bizpilot:bizpilot@127.0.0.1:5432/bizpilot
+      BIZPILOT_ENGINE: postgres
+      RLS_LIVE_URL: postgres://bizpilot:bizpilot@127.0.0.1:5432/bizpilot
+      ADMIN_LIVE_URL: postgres://bizpilot:bizpilot@127.0.0.1:5432/bizpilot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: node scripts/migrate-pg.mjs
+      - name: Assert the schema really landed
+        run: |
+          psql "$DATABASE_URL" -c "select count(*) from information_schema.tables where table_schema='public';"
+          psql "$DATABASE_URL" -c "select count(*) from pg_policies where schemaname='public';"
+      - run: npx tsc --noEmit
+      - run: npx eslint .
+      - run: npx vitest run
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+        env:
+          NEXT_PUBLIC_APP_URL: http://127.0.0.1:3100

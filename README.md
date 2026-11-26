@@ -35,22 +35,26 @@ invented customer list and no fabricated social proof anywhere in the marketing 
 | Admin panel (super-admin only): plan editor, workspaces, suspend, audit log, webhook log | Working |
 | Public lead capture API `/api/leads/capture` | Working when `LEAD_CAPTURE_KEY` is set |
 | Emails | Requires `RESEND_API_KEY`; without it the app says so and stores the message as approved-but-unsent |
-| Row level security | Policies in `sql/schema.postgres.sql`, **executed and asserted by 12 tests** against a real PostgreSQL engine (PGlite) — see section 7 |
+| Two engines, one API | **SQLite** by default; **PostgreSQL 17** automatically when `DATABASE_URL` is set. Same queries, same helpers — see section 7 |
+| Row level security | `sql/rls.postgres.sql`: 83 policies on all 26 tables, **proven twice** — 12 assertions on PGlite and 10 more on a live PostgreSQL 17 server from a non-owner role |
 
 **Honest limitations you must know before selling this:**
 
-1. The runtime data layer uses **SQLite** (`better-sqlite3`). The Postgres/Supabase schema with RLS is complete and is
-   now **proven by a test suite that runs it on a real PostgreSQL engine** (`tests/rls.postgres.test.ts`, 12 assertions:
-   cross-tenant reads return nothing, cross-tenant writes are rejected, super-admin sees all). The Postgres *driver* is
-   still not wired into the request path — see section 7. Until that step is done, tenant isolation in the running app
-   comes from application code (`organization_id` on every query), not from RLS.
-2. No payment provider, AI provider, email provider or Dropbox credentials were available while building, so those paths
+1. Both engines are wired: leave `DATABASE_URL` empty and the app uses a local SQLite file; set it and the app runs
+   on PostgreSQL with the same code path (`src/lib/pg-sync.ts` keeps the synchronous query API on top of a worker-owned
+   `pg` connection). The full suite — 82 tests and 15 browser tests — has been executed green on **PostgreSQL 17.12**,
+   not just on SQLite.
+2. The application connects to Postgres with the **table-owner** role, so its own queries bypass RLS, exactly like
+   Supabase's service role. The 83 RLS policies are what protects every other connection (an anon key, psql, an
+   analytics user); they are asserted from a non-owner role in `tests/rls.live.test.ts`. Keep the app's credentials
+   server-side.
+3. No payment provider, AI provider, email provider or Dropbox credentials were available while building, so those paths
    were verified against their failure modes (signature rejection, `not_configured` states, unit tests) but **not**
    against the live third-party service. Configure the keys and re-run the checklist in section 9 before charging anyone.
-3. There is no queue worker. Automation steps run inline on the request that fired the trigger. That is fine at SMB
-   volume; move `dispatchTrigger` to a queue (Inngest, QStash, Supabase cron) before high traffic.
-4. Invoices are derived, not stored: the billing page builds the invoice list from signature-verified
-   `invoice.*` webhook payloads. If Stripe never delivered an invoice event there is nothing to show, and the page says so.
+4. There is no queue worker. Automation steps run inline on the request that fired the trigger. That is fine at SMB
+   volume; move `dispatchTrigger` to a queue (Inngest, QStash, cron) before high traffic.
+5. A synchronous query blocks the Node process for its duration — true on both engines (better-sqlite3 is synchronous
+   too). Invisible at SMB volume; for high concurrency, move hot paths to async queries.
 
 ---
 
@@ -133,43 +137,70 @@ The webhook handler verifies the `Stripe-Signature` header (HMAC-SHA256 over `ti
 stores each event id once, and only then mutates the local subscription. **No access is ever granted from a success
 page** — `/billing?checkout=returned` explicitly says the change is pending until the webhook lands.
 
-## 7. Switching to Supabase Postgres
+## 7. Database engines: SQLite and PostgreSQL
 
-The Postgres schema is complete: enums, ~27 tables, `updated_at` triggers, `auth_user_org_ids()` and `is_super_admin()`
-helpers, and per-table RLS policies (including `org_invites`).
+One query API, two engines. `src/lib/db.ts` exposes `all / get / run / tx / exec / count`, and picks the engine from the
+environment:
 
-### What is already verified
+| `DATABASE_URL` | Engine | Use |
+| --- | --- | --- |
+| empty | SQLite (`better-sqlite3`), `data/bizpilot.db` | local development, the demo |
+| set | PostgreSQL (any host: Supabase, RDS, docker-compose, Neon) | production |
 
-`tests/rls.postgres.test.ts` boots the real schema on a real PostgreSQL engine (PGlite, in-process) and asserts, by
-executing queries:
+### How the sync API survives on an async driver
 
-* `auth` shim (`sql/local-postgres-shim.sql`) provides `auth.users`, `auth.uid()` and `auth.role()` for non-Supabase runs
-* cross-tenant `select` returns zero rows for another workspace's leads, customers, proposals, documents, messages
-* cross-tenant `insert` is rejected by the `with check` policies
-* an owner can read their own workspace's rows; `is_super_admin()` sees every workspace
-* `plans` is readable but not writable by a normal user
-* every assertion runs as a non-owner role (`app_user`), because a table owner bypasses RLS
+`pg` is asynchronous, but 300+ call sites were written against a synchronous API. Rather than rewrite them,
+`src/lib/pg-sync.ts` owns a worker thread (`scripts/pg-worker.mjs`) that holds the real connection, and blocks the caller
+on a `SharedArrayBuffer` via `Atomics.wait` until the rows are back. Queries do the following automatically:
 
-Run it with `npm test` (part of the 72-test suite). This is the strongest possible evidence short of a live Supabase
-project, and it means the policies themselves are correct — not just present.
+* `?` placeholders → `$1…$n`
+* `LIKE` → `ILIKE` (SQLite's `LIKE` is case-insensitive; Postgres's is not — search behaves identically on both)
+* `bigint` / `numeric` → JavaScript numbers, so `count(*)` is a number on both engines
 
-### What is still required in code
+`sql/schema.sqlite.sql` is written as portable SQL (no `PRAGMA`, no SQLite-only functions, foreign keys declared after
+their targets) and is applied **unchanged** to both engines, so the two deployments cannot drift.
 
-1. Implement the same `all/get/run/tx` surface as `src/lib/db.ts` over `pg`/`postgres` (async — every call site must be
-   awaited, and `count(*)` needs `::int` casts because Postgres returns `bigint`) and select the driver from
-   `DATABASE_URL`.
-2. Set the request's user JWT on the connection so RLS applies (`set local request.jwt.claim.sub = …`) instead of the
-   current `organization_id` filtering.
-3. Move the dev-only tables (`sessions`, `password_resets`, `rate_limits`) to Supabase Auth + Upstash/Postgres
-   equivalents.
+### Setting up a Postgres deployment
 
 ```bash
-psql "$DATABASE_URL" -f sql/schema.postgres.sql
-psql "$DATABASE_URL" -f sql/seed_plans.postgres.sql
+export DATABASE_URL="postgres://user:pass@host:5432/bizpilot"
+npm run db:migrate:pg      # schema + plan seed + 83 RLS policies
+npm run db:seed:pg -- --demo --email you@company.com --password 'StrongPass123'
+npm run build && npm start
+curl localhost:3000/api/health   # {"ok":true,"engine":"postgres","tables":26,...}
 ```
 
-**Do not describe the deployment as "RLS-protected"** until step 2 is done: the policies are proven, the runtime is not
-yet using them.
+Docker (app + Postgres 17, healthcheck-gated):
+
+```bash
+cp .env.example .env        # fill in what you have
+docker compose up -d --build
+docker compose exec app node scripts/seed.mjs --postgres --demo
+```
+
+### Proving it, instead of assuming it
+
+```bash
+npm run test:postgres       # typecheck → lint → migrate → 82 tests → build → 15 browser tests, all on Postgres
+```
+
+Verified in this repository, on PostgreSQL 17.12:
+
+* `tests/integration.test.ts` (19) — leads, plan limits, automations, usage metering, real writes
+* `tests/webhook.test.ts` (14) — Stripe signature verification and idempotency against the Postgres tables
+* `tests/rls.postgres.test.ts` (12) — the Supabase-shaped policies, executed on PGlite
+* `tests/rls.live.test.ts` (10) — the shipped policies, executed on a live server as a **non-owner** role: cross-tenant
+  reads return nothing, cross-tenant writes throw `row-level security policy`, super-admin sees all, `plans` is readable
+  but not writable
+* `npx playwright test` (15) — the whole UI, including proposal PDF and client acceptance, on Postgres
+
+### Roles
+
+* **app** (owner of the tables): full access, bypasses RLS by design — same trust level as Supabase `service_role`.
+  Keep its credentials server-side only.
+* **anything else** (anon key, psql, BI tool): sees only rows in workspaces where
+  `organization_members.user_id = auth.uid()`; set the caller with
+  `select set_config('request.jwt.claim.sub', '<profile id>', true);`
 
 ## 8. Dropbox setup
 
@@ -248,8 +279,12 @@ pre-paint script to avoid a flash. Icons come from `lucide-react`.
 
 ## 12. Deployment
 
-**Vercel:** import the repository, add every environment variable from section 5, set the build command to
-`npm run build`. Runs on SQLite are ephemeral — for Vercel you must complete section 7 first, or mount durable storage.
+**Docker (recommended, verified):** `docker compose up -d --build` runs the app and PostgreSQL 17 together, applies the
+schema, and healthchecks `/api/health`.
+
+**Vercel / Netlify / Fly:** import the repository, set `DATABASE_URL` to a hosted Postgres (Supabase, Neon, RDS) plus the
+variables from section 5, run `npm run db:migrate:pg` once against that database, and deploy. The build reads the plan
+catalogue, so the database must be reachable at build time.
 
 **Self-hosted:** `npm ci && npm run build && npm start`. Put the SQLite file (`data/`) and `data/uploads` on a persistent
 volume, and back them up.

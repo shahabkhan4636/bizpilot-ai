@@ -1,0 +1,53 @@
+# Self-hosted BizPilot AI: PostgreSQL 17 + the app, with a healthcheck-gated start.
+#
+#   cp .env.example .env      # fill in the keys you have
+#   docker compose up -d --build
+#   docker compose exec app node scripts/seed.mjs --postgres --demo
+#
+# Then open http://localhost:3000 and sign in with the seeded account.
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bizpilot}
+      POSTGRES_USER: ${POSTGRES_USER:-bizpilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-production}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bizpilot} -d ${POSTGRES_DB:-bizpilot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-bizpilot}:${POSTGRES_PASSWORD:-change-me-in-production}@db:5432/${POSTGRES_DB:-bizpilot}
+      BIZPILOT_PG_SCHEMA: "1"
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      LEAD_CAPTURE_KEY: ${LEAD_CAPTURE_KEY:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      DROPBOX_APP_KEY: ${DROPBOX_APP_KEY:-}
+      DROPBOX_APP_SECRET: ${DROPBOX_APP_SECRET:-}
+      DROPBOX_REDIRECT_URI: ${DROPBOX_REDIRECT_URI:-}
+    ports:
+      - "3000:3000"
+    volumes:
+      - uploads:/app/data/uploads
+
+volumes:
+  pgdata:
+  uploads:

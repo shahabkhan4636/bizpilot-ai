@@ -2,7 +2,7 @@
   "name": "bizpilot-ai",
   "version": "0.1.0",
   "private": true,
-  "description": "BizPilot AI — AI business automation & CRM SaaS for SMBs",
+  "description": "BizPilot AI \u2014 AI business automation & CRM SaaS for SMBs",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -12,7 +12,12 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "db:migrate": "node scripts/migrate.mjs",
-    "seed": "node scripts/seed.mjs"
+    "seed": "node scripts/seed.mjs",
+    "db:migrate:pg": "node scripts/migrate-pg.mjs",
+    "db:seed:pg": "node scripts/seed.mjs --postgres",
+    "dev:postgres": "next dev",
+    "start:postgres": "next start",
+    "test:postgres": "node scripts/test-postgres.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.6.0",

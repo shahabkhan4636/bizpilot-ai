@@ -30,7 +30,10 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 420_000,
     env: {
-      BIZPILOT_DB_FILE: "data/e2e.db",
+      // Postgres mode: set DATABASE_URL (and BIZPILOT_ENGINE=postgres) in the
+      // shell before `npx playwright test` and the whole suite runs against the
+      // real database instead of the SQLite file.
+      ...(process.env.DATABASE_URL ? {} : { BIZPILOT_DB_FILE: "data/e2e.db" }),
       NEXT_PUBLIC_APP_URL: `http://127.0.0.1:${PORT}`,
     },
   },

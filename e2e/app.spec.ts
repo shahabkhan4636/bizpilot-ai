@@ -3,11 +3,33 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 
+const PG_URL = process.env.DATABASE_URL ?? "";
 const DB = path.join(process.cwd(), "data", "e2e.db");
-for (const suffix of ["", "-wal", "-shm"]) {
-  const f = `${DB}${suffix}`;
-  if (fs.existsSync(f)) fs.rmSync(f);
+if (!PG_URL) {
+  for (const suffix of ["", "-wal", "-shm"]) {
+    const f = `${DB}${suffix}`;
+    if (fs.existsSync(f)) fs.rmSync(f);
+  }
 }
+
+/** Truncates the Postgres test database so a run always starts clean. */
+async function resetPostgres() {
+  const { Client } = await import("pg");
+  const client = new Client({ connectionString: PG_URL });
+  await client.connect();
+  const { rows } = await client.query(
+    `select table_name from information_schema.tables
+      where table_schema='public' and table_type='BASE TABLE' and table_name <> 'plans'`
+  );
+  if (rows.length) {
+    await client.query(`truncate table ${rows.map((r) => `"${r.table_name}"`).join(", ")} restart identity cascade`);
+  }
+  await client.end();
+}
+
+test.beforeAll(async () => {
+  if (PG_URL) await resetPostgres();
+});
 
 const stamp = Date.now();
 const userA = { email: `owner.a.${stamp}@example.com`, password: "TestingPass123", name: "Owner A", company: `Alpha ${stamp}` };
@@ -19,7 +41,24 @@ const userC = { email: `owner.c.${stamp}@example.com`, password: "TestingPass123
  * webhook would write. Used only where a test needs a feature the Starter trial
  * deliberately does not include (extra seats, automations).
  */
-function upgradePlan(email: string, planCode: string) {
+async function upgradePlan(email: string, planCode: string) {
+  if (PG_URL) {
+    const { Client } = await import("pg");
+    const client = new Client({ connectionString: PG_URL });
+    await client.connect();
+    const { rows } = await client.query(
+      `select m.organization_id as org from organization_members m
+         join profiles p on p.id = m.user_id where p.email = $1`,
+      [email]
+    );
+    if (!rows[0]) throw new Error(`no workspace for ${email}`);
+    await client.query("update subscriptions set plan_code = $1, status = 'active' where organization_id = $2", [
+      planCode,
+      rows[0].org,
+    ]);
+    await client.end();
+    return rows[0].org as string;
+  }
   const db = new Database(DB);
   db.pragma("journal_mode = WAL");
   const row = db
@@ -272,7 +311,7 @@ test("invitation flow: invite, open the real link, join the workspace", async ({
   const ownerCtx = await browser.newContext();
   const owner = await ownerCtx.newPage();
   await signup(owner, userC);
-  upgradePlan(userC.email, "professional");
+  await upgradePlan(userC.email, "professional");
 
   // --- owner creates the invitation ---
   await owner.goto("/settings");
