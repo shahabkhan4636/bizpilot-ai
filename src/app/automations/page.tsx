@@ -36,8 +36,10 @@ export default async function AutomationsPage() {
       user={{ name: ctx.displayName, email: ctx.user.email, isSuperAdmin: Boolean(ctx.user.is_super_admin) }}
       org={{ name: ctx.membership.organization_name }}
       role={ctx.membership.role}
+      canWriteLeads={ctx.can("lead:write")}
       planName={ctx.plan.name}
       trialDaysLeft={ctx.trialDaysLeft}
+      unreadNotifications={ctx.unreadNotifications}
     >
       <PageHeader title="Automations" description="Triggers, conditions and ordered steps — with duplicate-event protection built into the engine." />
 

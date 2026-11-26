@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { run, get, all } from "@/lib/db";
 import { nowIso } from "@/lib/utils";
 import { requireAuth } from "@/lib/auth";
+import { forbiddenRedirect, requirePermission } from "@/lib/authz";
 import { audit, logActivity } from "@/lib/audit";
 import { checkAutomationLimit } from "@/lib/plans";
 import { ValidationError, str, optionalStr, oneOf } from "@/lib/validate";
@@ -25,6 +26,11 @@ function handle(e: unknown): AutomationState {
 
 export async function createAutomationAction(_prev: AutomationState, form: FormData): Promise<AutomationState> {
   try {
+    try {
+      await requirePermission("automation:manage");
+    } catch (e) {
+      return handle(e);
+    }
     const { user, membership } = await requireAuth();
     const orgId = membership.organization_id;
 
@@ -133,6 +139,11 @@ export async function createAutomationAction(_prev: AutomationState, form: FormD
 }
 
 export async function toggleAutomationAction(form: FormData): Promise<void> {
+  try {
+    await requirePermission("automation:manage");
+  } catch {
+    forbiddenRedirect("automation:manage");
+  }
   const { user, membership } = await requireAuth();
   const orgId = membership.organization_id;
   const id = String(form.get("automation_id") ?? "");
@@ -144,6 +155,11 @@ export async function toggleAutomationAction(form: FormData): Promise<void> {
 }
 
 export async function deleteAutomationAction(form: FormData): Promise<void> {
+  try {
+    await requirePermission("automation:manage");
+  } catch {
+    forbiddenRedirect("automation:manage");
+  }
   const { user, membership } = await requireAuth();
   const orgId = membership.organization_id;
   const id = String(form.get("automation_id") ?? "");
@@ -157,6 +173,11 @@ export async function deleteAutomationAction(form: FormData): Promise<void> {
 /** Manual test mode: always a dry run, never writes executions or sends anything. */
 export async function testAutomationAction(_prev: AutomationState, form: FormData): Promise<AutomationState> {
   try {
+    try {
+      await requirePermission("automation:manage");
+    } catch (e) {
+      return handle(e);
+    }
     const { membership } = await requireAuth();
     const orgId = membership.organization_id;
     const id = str(form.get("automation_id"), "Automation", { min: 4 });
@@ -193,6 +214,11 @@ export async function testAutomationAction(_prev: AutomationState, form: FormDat
 /** Explicit retry of a failed run. The old row is removed so the same event can run again. */
 export async function retryExecutionAction(_prev: AutomationState, form: FormData): Promise<AutomationState> {
   try {
+    try {
+      await requirePermission("automation:manage");
+    } catch (e) {
+      return handle(e);
+    }
     const { user, membership } = await requireAuth();
     const orgId = membership.organization_id;
     const executionId = str(form.get("execution_id"), "Execution", { min: 4 });

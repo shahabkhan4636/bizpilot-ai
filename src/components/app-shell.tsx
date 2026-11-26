@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, UserSquare2, Bot, FileText, FolderOpen, Workflow,
-  BarChart3, CreditCard, Settings, ShieldCheck, LifeBuoy, Menu, X, LogOut, Plus, Inbox } from "lucide-react";
+  BarChart3, CreditCard, Settings, ShieldCheck, LifeBuoy, Menu, X, LogOut, Plus, Inbox, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
 import { Button } from "./ui/button";
@@ -17,6 +17,7 @@ const nav = [
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/ai-assistant", label: "AI assistant", icon: Bot },
   { href: "/approvals", label: "Approvals", icon: Inbox },
+  { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/proposals", label: "Proposals", icon: FileText },
   { href: "/documents", label: "Documents", icon: FolderOpen },
   { href: "/automations", label: "Automations", icon: Workflow },
@@ -35,15 +36,19 @@ export function AppShell({
   user,
   org,
   role,
+  canWriteLeads,
   planName,
   trialDaysLeft,
+  unreadNotifications = 0,
 }: {
   children: React.ReactNode;
   user: { name: string; email: string; isSuperAdmin: boolean };
   org: { name: string };
   role: string;
+  canWriteLeads?: boolean;
   planName: string;
   trialDaysLeft: number | null;
+  unreadNotifications?: number;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -83,7 +88,12 @@ export function AppShell({
             )}
           >
             <item.icon className="h-4 w-4 shrink-0" />
-            {item.label}
+            <span className="truncate">{item.label}</span>
+            {item.href === "/notifications" && unreadNotifications > 0 ? (
+              <span className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-white/20 px-1 text-[11px] font-semibold">
+                {unreadNotifications > 99 ? "99+" : unreadNotifications}
+              </span>
+            ) : null}
           </Link>
         ))}
         <div className="my-2 border-t border-[hsl(var(--border))]" />
@@ -149,9 +159,11 @@ export function AppShell({
             <p className="text-xs text-[hsl(var(--fg-muted))]">{planName} plan</p>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Link href="/leads?new=1" className="hidden sm:block">
-              <Button size="sm"><Plus className="h-4 w-4" /> New lead</Button>
-            </Link>
+            {canWriteLeads ? (
+              <Link href="/leads?new=1" className="hidden sm:block">
+                <Button size="sm"><Plus className="h-4 w-4" /> New lead</Button>
+              </Link>
+            ) : null}
             <ThemeToggle />
           </div>
         </header>

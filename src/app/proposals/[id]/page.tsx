@@ -25,7 +25,7 @@ export default async function ProposalDetailPage({ params }: { params: Promise<{
 
   const proposal = get<{
     id: string; title: string; client_name: string; client_email: string | null; summary: string | null;
-    scope: string | null; terms: string | null; currency: string; subtotal_cents: number; tax_cents: number;
+    scope: string | null; terms: string | null; currency: string; subtotal_cents: number; discount_cents: number; discount_percent: number; tax_cents: number;
     total_cents: number; status: string; share_token: string | null; version: number; accepted_at: string | null;
     rejected_at: string | null; expires_at: string | null; created_at: string; updated_at: string;
     customer_id: string | null; lead_id: string | null;
@@ -49,8 +49,10 @@ export default async function ProposalDetailPage({ params }: { params: Promise<{
       user={{ name: ctx.displayName, email: ctx.user.email, isSuperAdmin: Boolean(ctx.user.is_super_admin) }}
       org={{ name: ctx.membership.organization_name }}
       role={ctx.membership.role}
+      canWriteLeads={ctx.can("lead:write")}
       planName={ctx.plan.name}
       trialDaysLeft={ctx.trialDaysLeft}
+      unreadNotifications={ctx.unreadNotifications}
     >
       <Link href="/proposals" className="mb-4 inline-flex items-center gap-1 text-sm text-[hsl(var(--fg-muted))] hover:underline">
         <ArrowLeft className="h-4 w-4" /> All proposals
@@ -140,6 +142,8 @@ export default async function ProposalDetailPage({ params }: { params: Promise<{
                   items={items}
                   taxPercent={taxPercent}
                   currency={proposal.currency}
+                  discountPercent={proposal.discount_percent}
+                  discountCents={proposal.discount_cents}
                   clientName={proposal.client_name}
                   clientEmail={proposal.client_email ?? ""}
                   customerId={proposal.customer_id}

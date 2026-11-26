@@ -84,8 +84,10 @@ export default async function DashboardPage() {
       user={{ name: ctx.displayName, email: ctx.user.email, isSuperAdmin: Boolean(ctx.user.is_super_admin) }}
       org={{ name: ctx.membership.organization_name }}
       role={ctx.membership.role}
+      canWriteLeads={ctx.can("lead:write")}
       planName={ctx.plan.name}
       trialDaysLeft={ctx.trialDaysLeft}
+      unreadNotifications={ctx.unreadNotifications}
     >
       <PageHeader
         title={`Good to see you, ${ctx.displayName.split(" ")[0]}`}

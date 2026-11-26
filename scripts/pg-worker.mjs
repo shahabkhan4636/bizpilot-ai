@@ -69,7 +69,7 @@ function normalise(sql) {
 
 async function applySchema() {
   const dir = path.join(process.cwd(), "sql");
-  for (const file of ["schema.sqlite.sql", "seed_plans.sql"]) {
+  for (const file of ["schema.sqlite.sql", "seed_plans.sql", "rls.postgres.sql"]) {
     const sql = fs.readFileSync(path.join(dir, file), "utf8");
     await client.query(sql);
   }

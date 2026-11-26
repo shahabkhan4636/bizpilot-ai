@@ -55,7 +55,7 @@ export async function inviteMemberAction(_prev: InviteState, form: FormData): Pr
     }
 
     const email = emailField(form.get("email")).toLowerCase();
-    const role = oneOf(form.get("role"), "Role", ["member", "admin"] as const, "member");
+    const role = oneOf(form.get("role"), "Role", ["admin", "manager", "member", "viewer"] as const, "member");
 
     const already = get<{ id: string }>(
       `select m.id from organization_members m join profiles p on p.id = m.user_id

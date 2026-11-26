@@ -19,6 +19,7 @@ if (!url) {
 
 const root = process.cwd();
 const files = ["schema.sqlite.sql", "seed_plans.sql", "rls.postgres.sql"];
+const { execFileSync } = await import("node:child_process");
 
 const client = new pg.Client({ connectionString: url });
 await client.connect();
@@ -39,7 +40,18 @@ for (const file of files) {
   }
 }
 
-const { rows: counts } = await client.query(`
+// The snapshot is the union of every migration, so record them as applied;
+// otherwise `db:migrate` would try to re-add columns that already exist.
+await client.end();
+execFileSync(process.execPath, ["scripts/db-migrate.mjs", "--baseline"], {
+  stdio: "inherit",
+  env: { ...process.env, DATABASE_URL: url },
+});
+const summary = await import("pg");
+const tail = new summary.default.Client({ connectionString: url });
+await tail.connect();
+
+const { rows: counts } = await tail.query(`
   select
     (select count(*)::int from information_schema.tables where table_schema='public' and table_type='BASE TABLE') as tables,
     (select count(*)::int from pg_tables where schemaname='public' and rowsecurity) as tables_with_rls,
@@ -51,4 +63,4 @@ console.log(
 );
 console.log("\nNext: node scripts/seed.mjs --postgres --demo   (creates a login)");
 
-await client.end();
+await tail.end();

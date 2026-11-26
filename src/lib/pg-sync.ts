@@ -26,6 +26,35 @@ export type PgResult =
 type GlobalCache = { __bizpilotPg?: PgBridge };
 const g = globalThis as unknown as GlobalCache;
 
+/**
+ * A `?`-placeholder count that disagrees with the parameter count is the single
+ * most common way a hand-written statement breaks — and Postgres reports it as an
+ * opaque protocol error. Failing early with both numbers makes it a five-second
+ * fix instead of an hour.
+ */
+function assertPlaceholders(sql: string, params: unknown[]): void {
+  let count = 0;
+  let quote: string | null = null;
+  for (let i = 0; i < sql.length; i++) {
+    const ch = sql[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      continue;
+    }
+    if (ch === "?") count += 1;
+  }
+  if (count !== params.length) {
+    const head = sql.replace(/\s+/g, " ").trim().slice(0, 120);
+    throw new Error(
+      `SQL placeholder mismatch: ${count} placeholder(s) but ${params.length} parameter(s) — ${head}…`
+    );
+  }
+}
+
 export class PgBridge {
   private worker: Worker;
   private ready = false;
@@ -102,17 +131,20 @@ export class PgBridge {
   }
 
   all<T>(sql: string, params: unknown[]): T[] {
+    assertPlaceholders(sql, params);
     this.ensureReady();
     return this.unwrap<T[]>(this.call({ mode: "all", sql, params }));
   }
 
   get<T>(sql: string, params: unknown[]): T | undefined {
+    assertPlaceholders(sql, params);
     this.ensureReady();
     const row = this.unwrap<T | null>(this.call({ mode: "get", sql, params }));
     return row === null ? undefined : row;
   }
 
   run(sql: string, params: unknown[]): { changes: number; lastInsertRowid: number } {
+    assertPlaceholders(sql, params);
     this.ensureReady();
     const res = this.unwrap<{ changes: number }>(this.call({ mode: "run", sql, params }));
     return { changes: res.changes ?? 0, lastInsertRowid: 0 };
@@ -124,6 +156,7 @@ export class PgBridge {
   }
 
   one<T>(sql: string, params: unknown[]): T | null {
+    assertPlaceholders(sql, params);
     this.ensureReady();
     return this.unwrap<T | null>(this.call({ mode: "one", sql, params }));
   }

@@ -19,7 +19,8 @@ export default async function PublicProposalPage({ params }: { params: Promise<{
   const proposal = get<{
     id: string; organization_id: string; title: string; client_name: string; client_email: string | null;
     summary: string | null; scope: string | null; terms: string | null; currency: string;
-    subtotal_cents: number; tax_cents: number; total_cents: number; status: string; version: number;
+    subtotal_cents: number; discount_cents: number; discount_percent: number; tax_cents: number; total_cents: number;
+    status: string; version: number; share_expires_at: string | null;
     accepted_at: string | null; rejected_at: string | null; expires_at: string | null; created_at: string;
   }>("select * from proposals where share_token = ?", [token]);
 
@@ -46,7 +47,11 @@ export default async function PublicProposalPage({ params }: { params: Promise<{
     [proposal.id, proposal.organization_id]
   );
 
-  const expired = proposal.expires_at ? new Date(proposal.expires_at) < new Date() : false;
+  // Two independent clocks: the proposal itself may expire, and the share link
+  // may expire earlier. Either one closes the page.
+  const proposalExpired = proposal.expires_at ? new Date(proposal.expires_at) < new Date() : false;
+  const linkExpired = proposal.share_expires_at ? new Date(proposal.share_expires_at) < new Date() : false;
+  const expired = proposalExpired || linkExpired;
   const closed = proposal.status === "accepted" || proposal.status === "rejected";
 
   return (
@@ -66,7 +71,13 @@ export default async function PublicProposalPage({ params }: { params: Promise<{
         <div className="mb-4"><Alert tone="warning" title="Declined">You declined this proposal on {formatDate(proposal.rejected_at ?? "")}.</Alert></div>
       ) : null}
       {expired && !closed ? (
-        <div className="mb-4"><Alert tone="warning" title="Expired">This proposal expired on {formatDate(proposal.expires_at ?? "")}. Ask the sender to issue a new version.</Alert></div>
+        <div className="mb-4">
+          <Alert tone="warning" title="Expired">
+            {linkExpired
+              ? `This share link expired on ${formatDate(proposal.share_expires_at ?? "")}. Ask the sender for a fresh link.`
+              : `This proposal expired on ${formatDate(proposal.expires_at ?? "")}. Ask the sender to issue a new version.`}
+          </Alert>
+        </div>
       ) : null}
 
       <Card className="mb-4">
@@ -88,6 +99,12 @@ export default async function PublicProposalPage({ params }: { params: Promise<{
           </Table>
           <div className="ml-auto w-full max-w-xs space-y-1 border-t border-[hsl(var(--border))] pt-2">
             <Row label="Subtotal" value={formatMoney(proposal.subtotal_cents, proposal.currency)} />
+            {proposal.discount_cents > 0 ? (
+              <Row
+                label={`Discount${proposal.discount_percent ? ` (${proposal.discount_percent}%)` : ""}`}
+                value={`− ${formatMoney(proposal.discount_cents, proposal.currency)}`}
+              />
+            ) : null}
             <Row label="Tax" value={formatMoney(proposal.tax_cents, proposal.currency)} />
             <Row label="Total" value={formatMoney(proposal.total_cents, proposal.currency)} bold />
           </div>

@@ -79,8 +79,10 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
       user={{ name: ctx.displayName, email: ctx.user.email, isSuperAdmin: Boolean(ctx.user.is_super_admin) }}
       org={{ name: ctx.membership.organization_name }}
       role={ctx.membership.role}
+      canWriteLeads={ctx.can("lead:write")}
       planName={ctx.plan.name}
       trialDaysLeft={ctx.trialDaysLeft}
+      unreadNotifications={ctx.unreadNotifications}
     >
       <PageHeader title="Billing" description="Plans, usage and invoices. Plan changes go through Stripe Checkout; entitlements only move on a verified webhook." />
 

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { run, get } from "@/lib/db";
 import { nowIso } from "@/lib/utils";
 import { requireAuth } from "@/lib/auth";
+import { forbiddenRedirect, requirePermission } from "@/lib/authz";
 import { audit } from "@/lib/audit";
 import { hashPassword, verifyPassword, passwordProblems } from "@/lib/password";
 import { ValidationError, str, optionalStr, oneOf } from "@/lib/validate";
@@ -80,9 +81,17 @@ export async function updateMemberRoleAction(_prev: SettingsState, form: FormDat
     const { user, membership } = await requireAuth();
     const orgId = membership.organization_id;
     if (membership.role !== "owner") return { error: "Only the owner can change roles." };
+    // `ROLES` for assignment excludes "owner", so an owner can never be demoted
+    // by someone else and can never demote themselves by accident.
     const memberId = str(form.get("user_id"), "Member", { min: 4 });
-    const role = oneOf(form.get("role"), "Role", ["member", "admin", "owner"] as const, "member");
-    if (memberId === user.id && role !== "owner") return { error: "You cannot demote yourself while you are the owner." };
+    const role = oneOf(form.get("role"), "Role", ["admin", "manager", "member", "viewer"] as const, "member");
+    if (memberId === user.id) return { error: "You cannot change your own role. Ask another owner or admin." };
+    const target = get<{ role: string }>(
+      "select role from organization_members where organization_id = ? and user_id = ?",
+      [orgId, memberId]
+    );
+    if (!target) return { error: "That person is not a member of this workspace." };
+    if (target.role === "owner") return { error: "The workspace owner's role cannot be changed here." };
     run("update organization_members set role = ? where organization_id = ? and user_id = ?", [role, orgId, memberId]);
     audit({ organizationId: orgId, actorId: user.id, action: "org.role_changed", metadata: { role } });
   } catch (e) {
@@ -93,11 +102,18 @@ export async function updateMemberRoleAction(_prev: SettingsState, form: FormDat
 }
 
 export async function removeMemberAction(form: FormData): Promise<void> {
-  const { user, membership } = await requireAuth();
+  const guard = await requirePermission("team:manage").catch(() => forbiddenRedirect("team:manage"));
+  const { user, membership } = guard;
   const orgId = membership.organization_id;
-  if (membership.role !== "owner" && membership.role !== "admin") return;
   const memberId = String(form.get("user_id") ?? "");
-  if (memberId === user.id) return;
+  if (!memberId) throw new Error("No member was selected.");
+  if (memberId === user.id) throw new Error("You cannot remove yourself. Transfer ownership first.");
+  const target = get<{ role: string }>(
+    "select role from organization_members where organization_id = ? and user_id = ?",
+    [orgId, memberId]
+  );
+  if (!target) throw new Error("That person is not a member of this workspace.");
+  if (target.role === "owner") throw new Error("The workspace owner cannot be removed.");
   run("delete from organization_members where organization_id = ? and user_id = ?", [orgId, memberId]);
   audit({ organizationId: orgId, actorId: user.id, action: "org.member_removed" });
   revalidatePath("/settings");

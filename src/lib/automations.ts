@@ -2,6 +2,7 @@ import { all, get, run, tx } from "./db";
 import { newId } from "./ids";
 import { nowIso } from "./utils";
 import { logActivity } from "./audit";
+import { notify } from "./notifications";
 import { safeParse } from "./plans";
 
 /**
@@ -192,6 +193,14 @@ async function executeStep(
           now,
         ]
       );
+      notify({
+        organizationId: orgId,
+        type: "approval.pending",
+        level: "warning",
+        title: "An email needs your approval",
+        body: subject,
+        href: "/approvals",
+      });
       return { status: "ok", detail: "Email queued for approval (not sent automatically)" };
     }
 
@@ -343,6 +352,17 @@ export async function dispatchTrigger(
         action: failed ? "automation.failed" : "automation.succeeded",
         summary: `${automation.name} ${failed ? "failed" : "ran"} for ${entity.type} ${entity.id}`,
       });
+      // A failing automation is exactly the kind of thing nobody should discover by chance.
+      if (failed) {
+        notify({
+          organizationId,
+          type: "automation.failed",
+          level: "danger",
+          title: `Automation failed: ${automation.name}`,
+          body: errorMessage ?? "A step did not complete.",
+          href: "/automations",
+        });
+      }
     }
 
     results.push({

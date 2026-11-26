@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Input, Label, Select } from "@/components/ui/input";
+import { ROLES, ROLE_LABEL } from "@/lib/permissions";
 import {
   updateProfileAction, changePasswordAction, updateWorkspaceAction,
   updateMemberRoleAction, removeMemberAction, type SettingsState,
@@ -112,8 +113,9 @@ export function MemberRoleForm({ userId, role, canManage }: { userId: string; ro
     <form action={action} className="flex items-center gap-1">
       <input type="hidden" name="user_id" value={userId} />
       <Select name="role" defaultValue={role} className="h-8 w-auto text-xs" aria-label="Role">
-        <option value="member">Member</option>
-        <option value="admin">Admin</option>
+        {ROLES.filter((r) => r !== "owner").map((r) => (
+          <option key={r} value={r}>{ROLE_LABEL[r]}</option>
+        ))}
         <option value="owner">Owner</option>
       </Select>
       <Button type="submit" size="sm" variant="ghost" disabled={pending}>Set</Button>

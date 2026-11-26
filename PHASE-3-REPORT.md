@@ -1,148 +1,119 @@
-# BizPilot AI — Phase 3 report: it runs on PostgreSQL, proven
+# Phase 3 — Security & Multi-Tenant Isolation · Report
 
-**Date:** 9 August 2026 · **Goal you set:** "do each and every thing to make it work, don't stop until it works."
+Date: 2026-08-09 · Engine: PostgreSQL 17 (primary) + SQLite (dev/fallback) · Node 20
 
----
+## 1. What this phase had to prove
 
-## 1. The headline
+1. Five roles exist and behave differently: **owner, admin, manager, member, viewer**.
+2. Customer A can never reach Customer B's leads, proposals, documents, automation logs,
+   analytics or settings — by URL, by ID guessing, or by calling a server action directly.
+3. Every mutation is checked **server-side**; the UI hiding a button is a convenience, never
+   the control.
+4. Denials are honest: a refused write explains itself instead of leaking a stack trace or
+   silently "succeeding".
 
-The app no longer runs on SQLite only. It now runs on **PostgreSQL 17.12** with the same code path, and every gate has
-been executed green against that database — not simulated, not mocked:
+## 2. What was built
 
-| Gate | SQLite engine | PostgreSQL 17.12 engine |
+| Area | Where | Notes |
 | --- | --- | --- |
-| `npx tsc --noEmit` | clean | clean |
-| `npx eslint .` | clean | clean |
-| `npx vitest run` | **72 passed** (+10 RLS skipped) | **82 passed** (incl. 10 live RLS) |
-| `npx next build` | 39 routes | 39 routes |
-| `npx playwright test` | **15 passed** | **15 passed** |
-| `/api/health` | `ok:true` | `{"ok":true,"engine":"postgres","tables":26,"plans":4}` |
+| Permission catalogue | `src/lib/permissions.ts` | 5 roles × 24 permissions, single `GRANTS` table, `can()`, `permissionsFor()`, `isReadOnly()`, `canManageWorkspace()`, `canManageTeam()`, `canEditOwnedRecord()` |
+| Action guard | `src/lib/authz.ts` | `requirePermission()` throws `ForbiddenError`; `forbiddenRedirect()` for void actions |
+| Server-side gating | 29 call sites in `src/lib/actions/*` | every write, delete, export, AI call, team and settings action |
+| Row-level security | `sql/rls.postgres.sql` | 26 tables, 83 policies, verified on a live cluster |
+| Denial page | `src/app/forbidden/page.tsx` | names the role, the missing permission, and confirms nothing changed |
+| Read-only UI | leads, proposals, documents, app shell | `ctx.can(...)` hides create/import/upload affordances |
+| Notifications | `src/lib/notifications.ts` | 10 types, scoped per user and per organisation |
+| Email verification | `src/lib/email-verification.ts` | 48 h, single-use, sha256 at rest, one live token per user |
+| Account deletion | `src/lib/actions/account.ts` | password + typed confirmation, owner-blocked while teammates exist |
+| Security headers | `next.config.ts` | CSP, HSTS, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy |
 
-One command proves the Postgres side end to end:
+### Permission matrix (as enforced)
 
-```bash
-DATABASE_URL=postgres://… npm run test:postgres
-# typecheck → lint → migrate → vitest → build → playwright, all on Postgres
-```
+| Permission | owner | admin | manager | member | viewer |
+| --- | :-: | :-: | :-: | :-: | :-: |
+| 8 read permissions (`lead:read`, `customer:read`, `proposal:read`, `document:read`, `automation:read`, `analytics:read`, `ai:read`, `billing:read`) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| lead / customer write + delete | ✅ | ✅ | ✅ | write | — |
+| `proposal:write` / `proposal:delete` | ✅ | ✅ | ✅ | — | — |
+| `document:upload` / `document:delete` | ✅ | ✅ | ✅ | upload | — |
+| `automation:manage` | ✅ | ✅ | ✅ | — | — |
+| `approval:act` | ✅ | ✅ | ✅ | — | — |
+| `ai:generate` | ✅ | ✅ | ✅ | ✅ | — |
+| `export:data` | ✅ | ✅ | ✅ | ✅ | — |
+| `team:manage` | ✅ | ✅ | — | — | — |
+| `settings:workspace` | ✅ | ✅ | — | — | — |
+| `billing:manage` | ✅ | ✅ | — | — | — |
+| `workspace:delete` | ✅ | — | — | — | — |
 
----
+Unknown role ⇒ deny (fail closed). `owner` is never assignable through the UI or the actions,
+is immutable, and cannot be removed or self-removed.
 
-## 2. How it works (the part that was supposed to be hard)
+## 3. Bugs found and fixed during verification (not theoretical)
 
-The data layer is synchronous (`better-sqlite3` heritage, **304 call sites**), and every Node Postgres client is
-asynchronous. Rewriting 304 call sites would have risked the working app. Instead:
+1. **`org_invites.role` rejected `manager`/`viewer`.** Migration 001 pinned the invite CHECK to
+   (`owner`,`admin`,`member`) while migration 003 only widened `organization_members`. Inviting a
+   viewer failed with a raw Postgres constraint error surfaced in the UI. Fixed by **migration 004**
+   (Postgres in-place constraint swap, SQLite table rebuild), both with `.down` files.
+   *Found by:* the new viewer e2e journey.
+2. **`computeTotals` broke the production build.** It was exported from a `"use server"` module,
+   and those may only export async functions — `next build` failed. Moved to
+   `src/lib/proposal-math.ts` (pure) and imported from both the action and the tests.
+3. **A `?` placeholder miscount in the proposal insert (25 vs 24).** Added
+   `assertPlaceholders()` to the Postgres bridge so a mismatch reports both numbers and the first
+   120 characters of the statement instead of an opaque protocol error.
+4. **Test resets wiped `schema_migrations`**, so the next run believed every migration was pending.
+   Both the e2e reset and `resetDatabaseForTests()` now preserve `plans` and `schema_migrations`.
+5. **Boot schema was not idempotent.** `alter table … add column` in the generated snapshot threw
+   `duplicate column name` on the second boot and failed `next build`. The snapshot is now applied
+   statement-by-statement, ignoring only "already applied" errors; comment lines are stripped
+   before splitting so a leading `--` cannot silently drop the statement that follows.
+6. **Void server actions returned an error state** (`Promise<void>`), and refusing at the guard threw
+   a 500. They now redirect to `/forbidden` with the permission name.
+7. **Viewers still saw write affordances:** the header "New lead" button, the leads Import button,
+   the empty-state "Import CSV", the proposals "New proposal" button and the documents upload card.
 
-* `scripts/pg-worker.mjs` — a worker thread owns the real `pg` connection.
-* `src/lib/pg-sync.ts` — the main thread posts the query and blocks on a `SharedArrayBuffer` with `Atomics.wait` until
-  the rows come back. Callers see the same synchronous `all/get/run/tx` they always did.
-* The worker normalises the dialect every time, so no call site changed:
-  * `?` placeholders → `$1…$n` (quote-aware, never rewrites inside strings)
-  * `LIKE` → `ILIKE` (SQLite's `LIKE` is case-insensitive, Postgres's is not — search results stay identical)
-  * `bigint`/`numeric` → JS numbers, so `count(*)` is a number on both engines
-* `src/lib/db.ts` picks the engine from `DATABASE_URL`. Empty → SQLite file. Set → Postgres. No flags to remember.
-
-**Trade-off, stated plainly:** a query blocks the Node process while it runs — exactly as `better-sqlite3` already did.
-Invisible at SMB volume; for high concurrency, move the hot paths to async queries.
-
----
-
-## 3. The database
-
-`sql/schema.sqlite.sql` was rewritten to be **portable SQL** (no `PRAGMA`, no SQLite-only functions, foreign keys
-declared after their targets) so the *same file* creates the identical 26 tables on both engines. That removes the
-"two schemas drift apart" failure mode entirely.
-
-New files:
-
-| File | Purpose |
-| --- | --- |
-| `sql/rls.postgres.sql` | **83 RLS policies across all 26 tables**, plus `auth.uid()`, `auth_user_org_ids()`, `is_super_admin()` |
-| `scripts/migrate-pg.mjs` | `npm run db:migrate:pg` — schema + plan seed + policies, idempotent |
-| `tests/rls.live.test.ts` | 10 assertions executed against a **live** server from a **non-owner** role |
-| `src/app/api/health/route.ts` | Real health probe: engine, table count, plans, query latency |
-| `Dockerfile`, `docker-compose.yml`, `.dockerignore` | App + Postgres 17, healthcheck-gated, `docker compose up -d --build` |
-| `.github/workflows/ci.yml` | CI runs **both engines** — SQLite job and a Postgres 17 service job running the browser suite |
-| `scripts/test-postgres.mjs` | The whole gate against Postgres in one command |
-
-`scripts/seed.mjs` is now engine-aware: `node scripts/seed.mjs --postgres --demo` seeds a real login into Postgres.
-
----
-
-## 4. Security: what RLS actually protects
-
-The app connects as the **owner** of the tables, so its own queries bypass RLS — the same trust level as Supabase's
-`service_role`. RLS is what protects **every other connection**: an anon key, psql, a BI tool, a compromised read-only
-user. That is proven, not claimed:
+## 4. Verification executed (real, not asserted)
 
 ```
-tests/rls.live.test.ts (10 passed, live PostgreSQL 17, role bizpilot_anon)
-  ✔ runs as a non-owner role (the only configuration where RLS applies)
-  ✔ sees only its own workspace's leads
-  ✔ cannot read another workspace's lead even by primary key
-  ✔ cannot insert a lead into another workspace   (throws: row-level security policy)
-  ✔ cannot update or delete another workspace's lead (rowCount 0, data unchanged)
-  ✔ cannot read another workspace's members or invites
-  ✔ cannot see profiles outside its workspace
-  ✔ a super admin sees every workspace
-  ✔ can read the public plan catalogue but cannot change prices
-  ✔ cannot read webhook events or rate limits
+npx tsc --noEmit                 clean (0 errors, strict)
+npx eslint .                     0 errors, 0 warnings
+npx vitest run                   100 passed | 10 skipped (6 files)
+npx playwright test (postgres)   18 passed
+npx playwright test (sqlite)     18 passed
 ```
 
-Keep the app's database credentials server-side. Never ship them to a browser.
-
----
-
-## 5. Live preview — now Postgres-backed
-
-`npx next start -H 0.0.0.0 -p 3000` with `DATABASE_URL` set:
+Live checks against `next start`:
 
 ```
-GET /api/health → {"ok":true,"engine":"postgres","migrated":true,"tables":26,"plans":4,"leads":3,"latencyMs":3}
+GET /login       → 200 + CSP, HSTS, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy
+GET /api/readiness → 200 {"ready":true,"engine":"sqlite","checks":{"schema":{"ok":true},"migrations":{"ok":true}},...}
+GET /forbidden (unauthenticated) → 307 → /login
 ```
 
-| Account | Email | Password | Notes |
-| --- | --- | --- | --- |
-| Demo workspace | `demo@bizpilot.local` | `BizPilotDemo123` | Starter trial + 3 labelled sample leads, all in Postgres |
-| Super admin | `shahabkhanprofessional@gmail.com` | `BizPilotAdmin123` | `/admin` panel |
+Live database checks on PostgreSQL 17:
 
-Also verified over real HTTP against Postgres: the public capture API wrote a lead
-(`201 {"ok":true,…}` → row present in the `leads` table), and `/dashboard` → `307 → /login` without a session.
-
----
-
-## 6. Deployment — now actually possible
-
-Before this phase, a Vercel deploy would have lost data on every cold start. That blocker is gone:
-
-```bash
-# Self-hosted (app + Postgres 17, healthchecked)
-cp .env.example .env
-docker compose up -d --build
-docker compose exec app node scripts/seed.mjs --postgres --demo
-
-# Or any managed Postgres (Supabase / Neon / RDS) + Vercel
-export DATABASE_URL="postgres://…"
-npm run db:migrate:pg
-npm run build && vercel --prod
+```
+pg_constraint org_invites_role_check → CHECK (role = ANY ('owner','admin','manager','member','viewer'))
+schema_migrations → 001, 002, 003, 004 applied
 ```
 
-I did not deploy to a public host: the only credentials available here were a GitHub token (used — repo pushed) and a
-Netlify token, and neither gives a durable managed Postgres. Everything needed to deploy is now in the repository and
-verified locally on real PostgreSQL 17.
+Cross-tenant and role journeys covered by e2e: invitation → join, tenant isolation (workspace B
+cannot see workspace A records), viewer read-only (UI + server), settings/billing/admin guards,
+notification scoping, `?new=1` deep link refused for a viewer.
 
----
+## 5. Journeys map (master-prompt QA list)
 
-## 7. What is still not real (unchanged, and I will not pretend otherwise)
+| Journey | Status | Where |
+| --- | --- | --- |
+| A — signup → onboarding → first lead | ✅ | `e2e/app.spec.ts` signup + lead creation |
+| B — AI assistant & approvals | ✅ (live AI **BLOCKED**, correctly reported in UI) | AI page + approvals |
+| C — proposal → share link → client accept | ✅ | "proposal creation, PDF export, share link and client acceptance" |
+| D — team invite & role change | ✅ | invitation flow |
+| E — billing | ⚠️ UI + entitlement enforcement ✅, live Stripe **BLOCKED** | billing page test |
+| F — cross-tenant denial | ✅ | tenant isolation + viewer test |
+| G — plan-limit block | ✅ | unit + e2e lead-limit path |
 
-1. **Third-party credentials.** No Stripe, AI, Resend or Dropbox keys exist in this environment. Those paths are
-   verified against their *missing-credential* behaviour — the checkout button, the webhook signature verification, the
-   "AI not configured" banner, the "approved, unsent" email state. No live charge, generation or delivery has happened.
-2. **No queue worker.** Automation steps run inline on the triggering request.
-3. **Tokens to revoke.** The GitHub token (`ghp_a5a6…`) and Netlify token (`nfp_7CWU…`) you pasted are still valid.
-   Revoke them: <https://github.com/settings/tokens>, <https://app.netlify.com/user/applications>.
+## 6. Blocked on credentials (documented, not faked)
 
----
-
-## 8. Repository
-
-<https://github.com/shahabkhan4636/bizpilot-ai> — public, `main`, with CI that runs both engines.
+Stripe (`STRIPE_*`), Resend (`RESEND_API_KEY`, `EMAIL_FROM`), AI (`AI_API_KEY`, `AI_MODEL`,
+`AI_BASE_URL`), Dropbox (`DROPBOX_APP_*`), production `DATABASE_URL`, Vercel. Each surface shows a
+"not configured" state and `/api/readiness` lists it under `warnings` — no surface pretends to work.

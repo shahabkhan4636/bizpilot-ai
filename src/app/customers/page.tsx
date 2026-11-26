@@ -52,8 +52,10 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
       user={{ name: ctx.displayName, email: ctx.user.email, isSuperAdmin: Boolean(ctx.user.is_super_admin) }}
       org={{ name: ctx.membership.organization_name }}
       role={ctx.membership.role}
+      canWriteLeads={ctx.can("lead:write")}
       planName={ctx.plan.name}
       trialDaysLeft={ctx.trialDaysLeft}
+      unreadNotifications={ctx.unreadNotifications}
     >
       <PageHeader title="Customers" description="People and companies you have already won. Convert a won lead or add one manually." />
 

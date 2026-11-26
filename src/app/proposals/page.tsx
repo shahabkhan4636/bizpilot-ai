@@ -41,13 +41,19 @@ export default async function ProposalsPage() {
       user={{ name: ctx.displayName, email: ctx.user.email, isSuperAdmin: Boolean(ctx.user.is_super_admin) }}
       org={{ name: ctx.membership.organization_name }}
       role={ctx.membership.role}
+      canWriteLeads={ctx.can("lead:write")}
       planName={ctx.plan.name}
       trialDaysLeft={ctx.trialDaysLeft}
+      unreadNotifications={ctx.unreadNotifications}
     >
       <PageHeader
         title="Proposals"
         description="Priced proposals with version history, a secure client link and a PDF export."
-        actions={<Link href="/proposals/new"><Button size="sm"><Plus className="h-4 w-4" /> New proposal</Button></Link>}
+        actions={
+          ctx.can("proposal:write") ? (
+            <Link href="/proposals/new"><Button size="sm"><Plus className="h-4 w-4" /> New proposal</Button></Link>
+          ) : null
+        }
       />
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

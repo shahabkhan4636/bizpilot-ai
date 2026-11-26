@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import { get, run } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { nowIso } from "@/lib/utils";
@@ -179,6 +180,7 @@ export async function POST(request: Request) {
   } catch (e) {
     error = e instanceof Error ? e.message : "Unknown webhook error";
     run("update webhook_events set error = ?, processed_at = ? where id = ?", [error, nowIso(), eventId]);
+    logger.error("stripe webhook failed", { eventId, error });
     // 500 so Stripe retries with backoff.
     return NextResponse.json({ received: false, error }, { status: 500 });
   }

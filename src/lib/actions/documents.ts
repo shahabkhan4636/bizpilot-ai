@@ -5,6 +5,7 @@ import { run, get } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { nowIso } from "@/lib/utils";
 import { requireAuth } from "@/lib/auth";
+import { forbiddenRedirect, requirePermission } from "@/lib/authz";
 import { audit, logActivity } from "@/lib/audit";
 import { checkDocumentLimit, checkFeature } from "@/lib/plans";
 import {
@@ -15,6 +16,11 @@ import { dispatchTrigger } from "@/lib/automations";
 
 export type DocumentState = { error?: string; notice?: string } | null;
 
+function failState(e: unknown): DocumentState {
+  if (e instanceof ValidationError) return { error: e.message };
+  return { error: e instanceof Error ? e.message : "Unexpected error." };
+}
+
 const MAX_BYTES = 10 * 1024 * 1024;
 const ALLOWED = [
   "application/pdf", "image/png", "image/jpeg", "image/webp", "text/plain", "text/csv",
@@ -24,6 +30,11 @@ const ALLOWED = [
 
 export async function uploadDocumentAction(_prev: DocumentState, form: FormData): Promise<DocumentState> {
   try {
+    try {
+      await requirePermission("document:upload");
+    } catch (e) {
+      return failState(e);
+    }
     const { user, membership } = await requireAuth();
     const orgId = membership.organization_id;
 
@@ -88,6 +99,11 @@ export async function uploadDocumentAction(_prev: DocumentState, form: FormData)
 }
 
 export async function deleteDocumentAction(form: FormData): Promise<void> {
+  try {
+    await requirePermission("document:delete");
+  } catch {
+    forbiddenRedirect("document:delete");
+  }
   const { user, membership } = await requireAuth();
   const orgId = membership.organization_id;
   const id = String(form.get("document_id") ?? "");

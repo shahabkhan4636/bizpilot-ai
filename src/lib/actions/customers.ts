@@ -6,6 +6,7 @@ import { run, get } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { nowIso } from "@/lib/utils";
 import { requireAuth } from "@/lib/auth";
+import { forbiddenRedirect, requirePermission } from "@/lib/authz";
 import { audit, logActivity } from "@/lib/audit";
 import { ValidationError, str, email as emailField, optionalStr } from "@/lib/validate";
 import { dispatchTrigger } from "@/lib/automations";
@@ -18,6 +19,11 @@ function handle(e: unknown): CustomerState {
 }
 
 export async function createCustomerAction(_prev: CustomerState, form: FormData): Promise<CustomerState> {
+  try {
+    await requirePermission("customer:write");
+  } catch (e) {
+    return handle(e);
+  }
   let id = "";
   try {
     const { user, membership } = await requireAuth();
@@ -54,6 +60,11 @@ export async function createCustomerAction(_prev: CustomerState, form: FormData)
 
 export async function updateCustomerAction(_prev: CustomerState, form: FormData): Promise<CustomerState> {
   try {
+    try {
+      await requirePermission("customer:write");
+    } catch (e) {
+      return handle(e);
+    }
     const { user, membership } = await requireAuth();
     const orgId = membership.organization_id;
     const id = str(form.get("customer_id"), "Customer", { min: 4 });
@@ -77,6 +88,11 @@ export async function updateCustomerAction(_prev: CustomerState, form: FormData)
 }
 
 export async function deleteCustomerAction(form: FormData): Promise<void> {
+  try {
+    await requirePermission("customer:delete");
+  } catch {
+    forbiddenRedirect("customer:delete");
+  }
   const { user, membership } = await requireAuth();
   const orgId = membership.organization_id;
   const id = String(form.get("customer_id") ?? "");
@@ -88,6 +104,11 @@ export async function deleteCustomerAction(form: FormData): Promise<void> {
 
 /** Converts a lead into a customer record and links the two. */
 export async function convertLeadToCustomerAction(form: FormData): Promise<void> {
+  try {
+    await requirePermission("customer:write");
+  } catch {
+    forbiddenRedirect("customer:write");
+  }
   const { user, membership } = await requireAuth();
   const orgId = membership.organization_id;
   const leadId = String(form.get("lead_id") ?? "");

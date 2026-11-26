@@ -1,14 +1,16 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Input, Label, Select } from "@/components/ui/input";
 import { inviteMemberAction, acceptInviteAction, type InviteState } from "@/lib/actions/invites";
+import { ROLES, ROLE_LABEL, ROLE_DESCRIPTION, type Role } from "@/lib/permissions";
 
 export function InviteMemberForm({ canManage }: { canManage: boolean }) {
   const [state, action, pending] = useActionState(inviteMemberAction, null as InviteState);
+  const [role, setRole] = useState<Role>("member");
   if (!canManage) return <p className="text-sm text-[hsl(var(--fg-muted))]">Only an owner or admin can invite people.</p>;
   return (
     <form action={action} className="space-y-3">
@@ -30,10 +32,12 @@ export function InviteMemberForm({ canManage }: { canManage: boolean }) {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="invite_role">Role</Label>
-          <Select id="invite_role" name="role" defaultValue="member">
-            <option value="member">Member</option>
-            <option value="admin">Admin</option>
+          <Select id="invite_role" name="role" value={role} onChange={(e) => setRole(e.target.value as Role)}>
+            {ROLES.filter((r) => r !== "owner").map((r) => (
+              <option key={r} value={r}>{ROLE_LABEL[r]}</option>
+            ))}
           </Select>
+          <p className="text-xs text-[hsl(var(--fg-muted))]">{ROLE_DESCRIPTION[role]}</p>
         </div>
       </div>
       <Button type="submit" size="sm" disabled={pending}>

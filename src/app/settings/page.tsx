@@ -8,6 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { ProfileForm, PasswordForm, WorkspaceForm, MemberRoleForm, RemoveMemberButton } from "@/components/settings/settings-forms";
 import { InviteMemberForm } from "@/components/settings/invite-form";
+import { VerifyEmailCard, DeleteAccountCard } from "@/components/settings/account-forms";
+import { isEmailVerified } from "@/lib/email-verification";
 import { revokeInviteAction } from "@/lib/actions/invites";
 import { all, get } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
@@ -39,8 +41,10 @@ export default async function SettingsPage() {
       user={{ name: ctx.displayName, email: ctx.user.email, isSuperAdmin: Boolean(ctx.user.is_super_admin) }}
       org={{ name: ctx.membership.organization_name }}
       role={ctx.membership.role}
+      canWriteLeads={ctx.can("lead:write")}
       planName={ctx.plan.name}
       trialDaysLeft={ctx.trialDaysLeft}
+      unreadNotifications={ctx.unreadNotifications}
     >
       <PageHeader title="Settings" description="Your profile, workspace details and team." />
 
@@ -140,6 +144,26 @@ export default async function SettingsPage() {
           </CardContent>
         </Card>
       </div>
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Email verification</CardTitle>
+          <CardDescription>Confirm the address password resets are sent to.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <VerifyEmailCard verified={isEmailVerified(ctx.user.id)} email={ctx.user.email} />
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Account</CardTitle>
+          <CardDescription>Leaving the platform, or closing the workspace for good.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DeleteAccountCard role={ctx.membership.role} memberCount={members.length} />
+        </CardContent>
+      </Card>
+
     </AppShell>
   );
 }

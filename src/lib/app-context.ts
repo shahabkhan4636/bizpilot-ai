@@ -1,6 +1,8 @@
 import { requireAuth } from "./auth";
+import { can, canManageTeam, canManageWorkspace, isReadOnly, type Permission } from "./permissions";
 import { getEffectivePlan, subscriptionIsUsable, leadCount, usageThisMonth } from "./plans";
 import { get } from "./db";
+import { unreadCount } from "./notifications";
 
 export type AppContext = Awaited<ReturnType<typeof loadAppContext>>;
 
@@ -30,6 +32,12 @@ export async function loadAppContext() {
       aiThisMonth: usageThisMonth(membership.organization_id, "ai_generation"),
     },
     displayName: user.full_name ?? user.email,
-    canManage: membership.role === "owner" || membership.role === "admin",
+    /** Team administration (invite / remove / re-role). Owner and admin only. */
+    canManage: canManageTeam(membership.role),
+    canManageWorkspace: canManageWorkspace(membership.role),
+    readOnly: isReadOnly(membership.role),
+    unreadNotifications: unreadCount(membership.organization_id, user.id),
+    /** Capability check usable directly in a server component. */
+    can: (permission: Permission) => can(membership.role, permission),
   };
 }

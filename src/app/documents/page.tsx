@@ -44,8 +44,10 @@ export default async function DocumentsPage() {
       user={{ name: ctx.displayName, email: ctx.user.email, isSuperAdmin: Boolean(ctx.user.is_super_admin) }}
       org={{ name: ctx.membership.organization_name }}
       role={ctx.membership.role}
+      canWriteLeads={ctx.can("lead:write")}
       planName={ctx.plan.name}
       trialDaysLeft={ctx.trialDaysLeft}
+      unreadNotifications={ctx.unreadNotifications}
     >
       <PageHeader title="Documents" description="Files attached to customers and proposals. Records stay in the database; only files go to storage." />
 
@@ -78,7 +80,15 @@ export default async function DocumentsPage() {
             <CardTitle>Upload</CardTitle>
             <CardDescription>Customer linking is optional.</CardDescription>
           </CardHeader>
-          <CardContent><UploadDocumentForm customers={customers} /></CardContent>
+          <CardContent>
+            {ctx.can("document:upload") ? (
+              <UploadDocumentForm customers={customers} />
+            ) : (
+              <p className="text-sm text-[hsl(var(--fg-muted))]">
+                Your role can download files but not upload new ones.
+              </p>
+            )}
+          </CardContent>
         </Card>
 
         <Card className="overflow-hidden lg:col-span-2">

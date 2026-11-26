@@ -168,3 +168,56 @@ describe("stripe webhook signatures", () => {
     expect(verifyStripeSignature(body, null, secret).ok).toBe(false);
   });
 });
+
+describe("proposal money", () => {
+  // computeTotals is the single place proposal arithmetic happens, server-side.
+  const line = (cents: number) => ({ amount_cents: cents });
+
+  it("adds tax on the discounted base", async () => {
+    const { computeTotals } = await import("@/lib/proposal-math");
+    const t = computeTotals([line(100000), line(50000)], 10);
+    expect(t.subtotal).toBe(150000);
+    expect(t.discount).toBe(0);
+    expect(t.tax).toBe(15000);
+    expect(t.total).toBe(165000);
+  });
+
+  it("applies a percentage discount before tax", async () => {
+    const { computeTotals } = await import("@/lib/proposal-math");
+    const t = computeTotals([line(100000)], 10, { percent: 20 });
+    expect(t.discount).toBe(20000);
+    expect(t.taxable).toBe(80000);
+    expect(t.tax).toBe(8000);
+    expect(t.total).toBe(88000);
+  });
+
+  it("applies a fixed discount before tax", async () => {
+    const { computeTotals } = await import("@/lib/proposal-math");
+    const t = computeTotals([line(50000)], 0, { cents: 12500 });
+    expect(t.discount).toBe(12500);
+    expect(t.total).toBe(37500);
+  });
+
+  it("combines percent and fixed, and never exceeds the subtotal", async () => {
+    const { computeTotals } = await import("@/lib/proposal-math");
+    const t = computeTotals([line(10000)], 0, { percent: 50, cents: 999999 });
+    expect(t.discount).toBe(10000);
+    expect(t.total).toBe(0);
+  });
+
+  it("clamps nonsense input instead of producing a negative invoice", async () => {
+    const { computeTotals } = await import("@/lib/proposal-math");
+    const t = computeTotals([line(10000)], 500, { percent: -40, cents: -100 });
+    expect(t.discount).toBe(0);
+    expect(t.tax).toBe(10000); // tax rate clamped to 100%
+    expect(t.total).toBe(20000);
+    expect(Number.isFinite(t.total)).toBe(true);
+  });
+
+  it("rounds to whole cents", async () => {
+    const { computeTotals } = await import("@/lib/proposal-math");
+    const t = computeTotals([line(33333)], 7.5);
+    expect(Number.isInteger(t.tax)).toBe(true);
+    expect(Number.isInteger(t.total)).toBe(true);
+  });
+});

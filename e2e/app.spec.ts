@@ -19,7 +19,8 @@ async function resetPostgres() {
   await client.connect();
   const { rows } = await client.query(
     `select table_name from information_schema.tables
-      where table_schema='public' and table_type='BASE TABLE' and table_name <> 'plans'`
+      where table_schema='public' and table_type='BASE TABLE'
+        and table_name not in ('plans','schema_migrations')`
   );
   if (rows.length) {
     await client.query(`truncate table ${rows.map((r) => `"${r.table_name}"`).join(", ")} restart identity cascade`);
@@ -434,4 +435,98 @@ test("billing page reports the missing Stripe config and never invents invoices"
   await expect(page.getByText("No invoices recorded")).toBeVisible();
   await expect(page.getByText("$29.00").first()).toBeVisible();
   await ctx.close();
+});
+
+test("notifications: the bell shows what happened and can be cleared", async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  const owner = { email: `owner.d.${stamp}@example.com`, password: "TestingPass123", name: "Owner D", company: `Delta ${stamp}` };
+  await signup(page, owner);
+  await upgradePlan(owner.email, "professional");
+
+  // Build an automation that queues an email for approval.
+  await page.goto("/automations");
+  await page.getByRole("button", { name: "New automation" }).click();
+  await page.getByLabel("Name *").fill(`Notify me ${stamp}`);
+  await page.getByLabel("Step 1 action").selectOption("send_email");
+  await page.getByLabel("Subject").fill("Please review this draft");
+  await page.getByLabel("Body").fill("Body text for the approval queue.");
+  await page.getByRole("button", { name: "Create automation" }).click();
+  await expect(page.getByText(`Automation "Notify me ${stamp}" created`)).toBeVisible({ timeout: 20_000 });
+
+  // A real lead fires the trigger.
+  await page.goto("/leads?new=1");
+  await page.getByLabel("Name *").fill(`Notify Lead ${stamp}`);
+  await page.getByLabel("Email").fill(`notify.${stamp}@example.com`);
+  await page.getByRole("button", { name: "Create lead" }).click();
+  await page.waitForURL(/\/leads\/[0-9a-f-]{8,}/, { timeout: 30_000 });
+
+  // The notification exists and is linked to the approval queue.
+  await page.goto("/notifications");
+  await expect(page.getByRole("heading", { name: "Notifications" })).toBeVisible();
+  await expect(page.getByText("An email needs your approval")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("approval.pending").first()).toBeVisible();
+
+  // Marking all read clears the unread counter on the page.
+  await page.getByRole("button", { name: "Mark all read" }).click();
+  await expect(page.getByText("Mark all read")).toHaveCount(0, { timeout: 20_000 });
+  await ctx.close();
+});
+
+test("a viewer is read-only: no create buttons, and the write is refused server-side", async ({ browser }) => {
+  const ownerCtx = await browser.newContext();
+  const owner = await ownerCtx.newPage();
+  const ownerUser = { email: `owner.e.${stamp}@example.com`, password: "TestingPass123", name: "Owner E", company: `Epsilon ${stamp}` };
+  await signup(owner, ownerUser);
+  await upgradePlan(ownerUser.email, "professional");
+
+  // Invite a viewer.
+  const viewerEmail = `viewer.${stamp}@example.com`;
+  await owner.goto("/settings");
+  await owner.getByLabel("Email address").fill(viewerEmail);
+  await owner.getByLabel("Role").selectOption("viewer");
+  await owner.getByRole("button", { name: "Send invitation" }).click();
+  const href = await owner.getByRole("link", { name: /\/invite\// }).getAttribute("href");
+  expect(href).toBeTruthy();
+
+  const viewerCtx = await browser.newContext();
+  const viewer = await viewerCtx.newPage();
+  await viewer.goto(href!);
+  await viewer.getByLabel("Your name").fill("Read Only");
+  await viewer.getByLabel("Choose a password").fill("ViewerPass123");
+  await viewer.getByRole("button", { name: "Create account & join" }).click();
+  await viewer.waitForURL("**/dashboard", { timeout: 30_000 });
+
+  // The leads page renders, but every write affordance is gone.
+  await viewer.goto("/leads");
+  await expect(viewer.getByRole("heading", { name: "Leads" })).toBeVisible();
+  await expect(viewer.getByRole("link", { name: /New lead/ })).toHaveCount(0);
+  await expect(viewer.getByRole("button", { name: /New lead/ })).toHaveCount(0);
+  await expect(viewer.getByRole("link", { name: /Import/ })).toHaveCount(0);
+  await expect(viewer.getByText("Read-only access")).toBeVisible();
+
+  // Deep-linking to the create panel does not give a viewer a form either.
+  await viewer.goto("/leads?new=1");
+  await expect(viewer.getByText("Read-only access")).toBeVisible();
+  await expect(viewer.getByRole("button", { name: "Create lead" })).toHaveCount(0);
+
+  // And the writes are refused server-side: no record appears.
+  await viewer.goto("/leads?q=Sneaky");
+  await expect(viewer.getByText("Sneaky Lead")).toHaveCount(0);
+
+  await viewerCtx.close();
+  await ownerCtx.close();
+});
+
+test("readiness probe reports schema state and which providers are configured", async ({ request }) => {
+  const res = await request.get("/api/readiness");
+  expect(res.status()).toBe(200);
+  const body = await res.json();
+  expect(body.ready).toBe(true);
+  expect(body.checks.schema.ok).toBe(true);
+  expect(body.checks.migrations.ok).toBe(true);
+  expect(body.providers).toHaveProperty("stripe");
+  expect(body.providers).toHaveProperty("email");
+  expect(body.providers).toHaveProperty("ai");
+  expect(Array.isArray(body.warnings)).toBe(true);
 });

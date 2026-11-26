@@ -11,13 +11,16 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "db:migrate": "node scripts/migrate.mjs",
+    "db:migrate": "node scripts/db-migrate.mjs",
     "seed": "node scripts/seed.mjs",
-    "db:migrate:pg": "node scripts/migrate-pg.mjs",
+    "db:migrate:pg": "node scripts/db-migrate.mjs",
     "db:seed:pg": "node scripts/seed.mjs --postgres",
     "dev:postgres": "next dev",
     "start:postgres": "next start",
-    "test:postgres": "node scripts/test-postgres.mjs"
+    "test:postgres": "node scripts/test-postgres.mjs",
+    "db:migrate:status": "node scripts/db-migrate.mjs --status",
+    "db:migrate:down": "node scripts/db-migrate.mjs --down",
+    "db:schema": "node scripts/build-schema.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.6.0",

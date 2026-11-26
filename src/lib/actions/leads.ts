@@ -6,12 +6,14 @@ import { run, get, all } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { nowIso } from "@/lib/utils";
 import { requireAuth } from "@/lib/auth";
+import { forbiddenRedirect, requirePermission } from "@/lib/authz";
 import { audit, logActivity } from "@/lib/audit";
 import { checkLeadLimit, recordUsage } from "@/lib/plans";
 import { ValidationError, str, email as emailField, oneOf, optionalStr, money } from "@/lib/validate";
 import { LEAD_STATUSES, type LeadStatus, mapImportRows, parseCsv } from "@/lib/csv";
 import { scoreLead } from "@/lib/ai";
 import { dispatchTrigger } from "@/lib/automations";
+import { notify } from "@/lib/notifications";
 
 export type LeadState = { error?: string; notice?: string; ok?: boolean; fieldErrors?: Record<string, string> } | null;
 
@@ -51,6 +53,11 @@ function parseLeadForm(form: FormData, partial: boolean) {
 }
 
 export async function createLeadAction(_prev: LeadState, form: FormData): Promise<LeadState> {
+  try {
+    await requirePermission("lead:write");
+  } catch (e) {
+    return handle(e);
+  }
   let newLeadId = "";
   try {
     const { user, membership } = await requireAuth();
@@ -74,6 +81,17 @@ export async function createLeadAction(_prev: LeadState, form: FormData): Promis
       ]
     );
     recordUsage(orgId, "lead");
+    if (data.assigned_to && data.assigned_to !== user.id) {
+      notify({
+        organizationId: orgId,
+        userId: data.assigned_to as string,
+        actorId: user.id,
+        type: "lead.assigned",
+        title: `New lead assigned to you: ${data.name}`,
+        body: "Created from the dashboard.",
+        href: `/leads/${id}`,
+      });
+    }
     logActivity({
       organizationId: orgId, actorId: user.id, entityType: "lead", entityId: id,
       action: "lead.created", summary: `Lead "${data.name}" created`,
@@ -94,6 +112,11 @@ export async function createLeadAction(_prev: LeadState, form: FormData): Promis
 
 export async function updateLeadAction(_prev: LeadState, form: FormData): Promise<LeadState> {
   try {
+    try {
+      await requirePermission("lead:write");
+    } catch (e) {
+      return handle(e);
+    }
     const { user, membership } = await requireAuth();
     const orgId = membership.organization_id;
     const leadId = str(form.get("lead_id"), "Lead", { min: 4 });
@@ -140,6 +163,11 @@ export async function updateLeadAction(_prev: LeadState, form: FormData): Promis
 }
 
 export async function deleteLeadAction(form: FormData): Promise<void> {
+  try {
+    await requirePermission("lead:delete");
+  } catch {
+    forbiddenRedirect("lead:delete");
+  }
   const { user, membership } = await requireAuth();
   const orgId = membership.organization_id;
   const leadId = String(form.get("lead_id") ?? "");
@@ -151,6 +179,11 @@ export async function deleteLeadAction(form: FormData): Promise<void> {
 
 export async function addNoteAction(_prev: LeadState, form: FormData): Promise<LeadState> {
   try {
+    try {
+      await requirePermission("lead:write");
+    } catch (e) {
+      return handle(e);
+    }
     const { user, membership } = await requireAuth();
     const orgId = membership.organization_id;
     const leadId = str(form.get("lead_id"), "Lead", { min: 4 });
@@ -172,6 +205,11 @@ export async function addNoteAction(_prev: LeadState, form: FormData): Promise<L
 /** Scores a single lead with the provider if configured, else rule-based. */
 export async function scoreLeadAction(_prev: LeadState, form: FormData): Promise<LeadState> {
   try {
+    try {
+      await requirePermission("ai:generate");
+    } catch (e) {
+      return handle(e);
+    }
     const { user, membership } = await requireAuth();
     const orgId = membership.organization_id;
     const leadId = str(form.get("lead_id"), "Lead", { min: 4 });
@@ -200,6 +238,11 @@ export async function scoreLeadAction(_prev: LeadState, form: FormData): Promise
 
 export async function assignLeadAction(_prev: LeadState, form: FormData): Promise<LeadState> {
   try {
+    try {
+      await requirePermission("lead:write");
+    } catch (e) {
+      return handle(e);
+    }
     const { user, membership } = await requireAuth();
     const orgId = membership.organization_id;
     const leadId = str(form.get("lead_id"), "Lead", { min: 4 });
@@ -209,6 +252,18 @@ export async function assignLeadAction(_prev: LeadState, form: FormData): Promis
       if (!member) return { error: "That user is not a member of this workspace." };
     }
     run("update leads set assigned_to = ?, updated_at = ? where id = ? and organization_id = ?", [assignee, nowIso(), leadId, orgId]);
+    if (assignee) {
+      const lead = get<{ name: string }>("select name from leads where id = ? and organization_id = ?", [leadId, orgId]);
+      notify({
+        organizationId: orgId,
+        userId: assignee,
+        actorId: user.id,
+        type: "lead.assigned",
+        title: `Lead assigned: ${lead?.name ?? "a lead"}`,
+        body: "You are now the owner of this lead.",
+        href: `/leads/${leadId}`,
+      });
+    }
     audit({ organizationId: orgId, actorId: user.id, action: "lead.assign", targetType: "lead", targetId: leadId });
     revalidatePath("/leads");
     return { notice: assignee ? "Lead reassigned." : "Lead unassigned." };
@@ -220,6 +275,11 @@ export async function assignLeadAction(_prev: LeadState, form: FormData): Promis
 /** Bulk CSV import. Validates every row; reports exactly what was created and skipped. */
 export async function importLeadsAction(_prev: LeadState, form: FormData): Promise<LeadState> {
   try {
+    try {
+      await requirePermission("lead:write");
+    } catch (e) {
+      return handle(e);
+    }
     const { user, membership } = await requireAuth();
     const orgId = membership.organization_id;
     const csvText = String(form.get("csv") ?? "");

@@ -17,6 +17,8 @@ export function ProposalEditor({
   items,
   taxPercent,
   currency,
+  discountPercent: propsDiscountPercent,
+  discountCents: propsDiscountCents,
   clientName,
   clientEmail,
   customerId,
@@ -29,6 +31,8 @@ export function ProposalEditor({
   items: Item[];
   taxPercent: number;
   currency: string;
+  discountPercent?: number;
+  discountCents?: number;
   clientName: string;
   clientEmail: string;
   customerId?: string | null;
@@ -47,6 +51,9 @@ export function ProposalEditor({
   );
   const [tax, setTax] = useState(String(taxPercent));
   const [curr, setCurr] = useState(currency);
+  const [discountPercent, setDiscountPercent] = useState(String(propsDiscountPercent ?? 0));
+  const [discountAmount, setDiscountAmount] = useState(((propsDiscountCents ?? 0) / 100).toFixed(2));
+  const [shareDays, setShareDays] = useState("30");
   const [selectedCustomer, setSelectedCustomer] = useState(customerId ?? "");
   const [selectedLead, setSelectedLead] = useState(leadId ?? "");
 
@@ -92,6 +99,40 @@ export function ProposalEditor({
         <div className="space-y-1.5">
           <Label htmlFor="tax_percent">Tax rate (%)</Label>
           <Input id="tax_percent" name="tax_percent" value={tax} onChange={(e) => setTax(e.target.value)} inputMode="decimal" />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="discount_percent">Discount (%)</Label>
+          <Input
+            id="discount_percent"
+            name="discount_percent"
+            value={discountPercent}
+            onChange={(e) => setDiscountPercent(e.target.value)}
+            inputMode="decimal"
+            placeholder="0"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="discount_amount">Discount (fixed)</Label>
+          <Input
+            id="discount_amount"
+            name="discount_amount"
+            value={discountAmount}
+            onChange={(e) => setDiscountAmount(e.target.value)}
+            inputMode="decimal"
+            placeholder="0.00"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="share_expiry_days">Share link valid for (days)</Label>
+          <Input
+            id="share_expiry_days"
+            name="share_expiry_days"
+            value={shareDays}
+            onChange={(e) => setShareDays(e.target.value)}
+            inputMode="numeric"
+            placeholder="30"
+          />
+          <p className="text-xs text-[hsl(var(--fg-muted))]">Blank or 0 keeps the link valid until the proposal expires.</p>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="customer_id">Link to customer</Label>

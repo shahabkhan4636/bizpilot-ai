@@ -1,0 +1,29 @@
+-- Reverses 001 (Postgres). CASCADE is required because the RLS policies created
+-- by sql/rls.postgres.sql reference these tables. Disposable environments only.
+drop table if exists rate_limits cascade;
+drop table if exists webhook_events cascade;
+drop table if exists audit_logs cascade;
+drop table if exists usage_records cascade;
+drop table if exists support_tickets cascade;
+drop table if exists notifications cascade;
+drop table if exists messages cascade;
+drop table if exists documents cascade;
+drop table if exists automation_executions cascade;
+drop table if exists automation_steps cascade;
+drop table if exists automations cascade;
+drop table if exists proposal_items cascade;
+drop table if exists proposals cascade;
+drop table if exists tasks cascade;
+drop table if exists activities cascade;
+drop table if exists lead_notes cascade;
+drop table if exists leads cascade;
+drop table if exists customers cascade;
+drop table if exists subscriptions cascade;
+drop table if exists plans cascade;
+drop table if exists org_invites cascade;
+drop table if exists organization_members cascade;
+drop table if exists organizations cascade;
+drop table if exists password_resets cascade;
+drop table if exists sessions cascade;
+drop table if exists profiles cascade;
+drop table if exists email_verifications cascade;

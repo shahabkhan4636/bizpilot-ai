@@ -112,8 +112,10 @@ export default async function LeadsPage({
       user={{ name: ctx.displayName, email: ctx.user.email, isSuperAdmin: Boolean(ctx.user.is_super_admin) }}
       org={{ name: ctx.membership.organization_name }}
       role={ctx.membership.role}
+      canWriteLeads={ctx.can("lead:write")}
       planName={ctx.plan.name}
       trialDaysLeft={ctx.trialDaysLeft}
+      unreadNotifications={ctx.unreadNotifications}
     >
       <PageHeader
         title="Leads"
@@ -126,7 +128,9 @@ export default async function LeadsPage({
             >
               <Download className="h-4 w-4" /> Export CSV
             </a>
-            <Link href="/leads/import"><Button size="sm" variant="outline"><Upload className="h-4 w-4" /> Import</Button></Link>
+            {ctx.can("lead:write") ? (
+              <Link href="/leads/import"><Button size="sm" variant="outline"><Upload className="h-4 w-4" /> Import</Button></Link>
+            ) : null}
           </>
         }
       />
@@ -145,7 +149,16 @@ export default async function LeadsPage({
         <StatCard label="Leads in workspace" value={String(ctx.usage.leads)} hint={`Limit ${ctx.plan.lead_limit.toLocaleString()}`} />
       </div>
 
-      <div className="mb-4"><NewLeadPanel members={members} defaultOpen={sp.new === "1"} /></div>
+      <div className="mb-4">
+        {ctx.can("lead:write") ? (
+          <NewLeadPanel members={members} defaultOpen={sp.new === "1"} />
+        ) : (
+          <Alert tone="info" title="Read-only access">
+            Your role ({ctx.membership.role}) can view and export leads but not change them. Ask a
+            workspace admin if you need edit rights.
+          </Alert>
+        )}
+      </div>
 
       <div className="mb-3"><LeadFilters members={members} /></div>
 
@@ -158,7 +171,11 @@ export default async function LeadsPage({
                 ? "Add your first lead or import a CSV to start filling the pipeline. Nothing here is pre-filled with fake data."
                 : "Try clearing the search box, status or owner filters."
             }
-            action={<Link href="/leads/import"><Button size="sm" variant="outline">Import CSV</Button></Link>}
+            action={
+              ctx.can("lead:write") ? (
+                <Link href="/leads/import"><Button size="sm" variant="outline">Import CSV</Button></Link>
+              ) : undefined
+            }
           />
         ) : (
           <Table>

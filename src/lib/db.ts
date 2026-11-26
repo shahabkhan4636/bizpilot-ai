@@ -43,18 +43,80 @@ function readSql(file: string): string {
   return fs.readFileSync(p, "utf8");
 }
 
+/**
+ * A database created from the consolidated snapshot already contains every
+ * migration's DDL, so mark them applied. Without this, `npm run db:migrate`
+ * would try to re-add columns that already exist.
+ */
+function recordMigrationsAsApplied(database: Database.Database): void {
+  try {
+    const dir = path.join(process.cwd(), "sql", "migrations");
+    if (!fs.existsSync(dir)) return;
+    const ids = [
+      ...new Set(
+        fs
+          .readdirSync(dir)
+          .filter((f) => /\.up\.(sql|postgres\.sql|sqlite\.sql)$/.test(f))
+          .map((f) => f.split("_")[0])
+      ),
+    ].sort();
+    database.exec(
+      "create table if not exists schema_migrations (id text primary key, name text not null, checksum text not null, applied_at text not null)"
+    );
+    const now = new Date().toISOString();
+    const insert = database.prepare(
+      "insert or ignore into schema_migrations (id, name, checksum, applied_at) values (?,?,?,?)"
+    );
+    for (const id of ids) {
+      const row = database
+        .prepare("select name from schema_migrations limit 1")
+        .get() as { name?: string } | undefined;
+      if (row?.name) continue; // already baselined
+      insert.run(id, `${id}_snapshot`, "snapshot", now);
+    }
+  } catch {
+    // Bookkeeping only: never block application startup because of it.
+  }
+}
+
+const ALREADY_APPLIED = /duplicate column name|already exists|duplicate object/i;
+
+function applySchemaIdempotently(database: Database.Database, sql: string): void {
+  // Comment-only lines are stripped first: a leading `--` must not cause the
+  // statement that follows it to be skipped.
+  const statements = sql
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("--"))
+    .join("\n")
+    .split(/;\s*(?:\r?\n|$)/)
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0);
+  for (const statement of statements) {
+    try {
+      database.exec(statement);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (ALREADY_APPLIED.test(message)) continue;
+      throw new Error(`Schema statement failed: ${message}\n${statement.slice(0, 200)}`);
+    }
+  }
+}
+
 function initialise(): Database.Database {
   if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
   const database = new Database(DB_FILE);
   database.pragma("journal_mode = WAL");
   database.pragma("foreign_keys = ON");
 
-  // The schema is written entirely with `create table if not exists` /
-  // `create index if not exists`, so applying it on every boot is safe and means
-  // an existing database picks up newly added tables without a manual migration.
-  database.exec(readSql("schema.sqlite.sql"));
+  // Applying the snapshot on every boot is what lets an existing database pick up
+  // newly added tables without a manual step. `create table/index if not exists`
+  // is idempotent, but `alter table … add column` (used by older migrations) is
+  // not, so statements are applied one at a time and only "it is already there"
+  // errors are ignored — anything else still fails loudly.
+  applySchemaIdempotently(database, readSql("schema.sqlite.sql"));
   // Idempotent plan seed (upsert) so pricing can change without code edits.
   database.exec(readSql("seed_plans.sql"));
+  recordMigrationsAsApplied(database);
   return database;
 }
 
@@ -112,7 +174,8 @@ export function resetDatabaseForTests(): void {
   if (isPostgresEngine()) {
     const tables = all<{ table_name: string }>(
       `select table_name from information_schema.tables
-        where table_schema = 'public' and table_type = 'BASE TABLE' and table_name <> 'plans'`
+        where table_schema = 'public' and table_type = 'BASE TABLE'
+          and table_name not in ('plans','schema_migrations')`
     );
     if (tables.length === 0) return;
     const list = tables.map((t) => `"${t.table_name}"`).join(", ");
@@ -122,9 +185,9 @@ export function resetDatabaseForTests(): void {
 
   const database = db();
   const tables = all<{ name: string }>(
-    "select name from sqlite_master where type='table' and name not in ('plans')"
+    "select name from sqlite_master where type='table' and name not in ('plans','schema_migrations')"
   );
   database.pragma("foreign_keys = OFF");
-  for (const t of tables) database.prepare(`delete from ${t.name}`).run();
+  for (const t of tables) database.prepare(`delete from "${t.name}"`).run();
   database.pragma("foreign_keys = ON");
 }

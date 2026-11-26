@@ -6,10 +6,13 @@ import { run, get, all, tx } from "@/lib/db";
 import { newId, newShareToken } from "@/lib/ids";
 import { addDays, nowIso } from "@/lib/utils";
 import { requireAuth } from "@/lib/auth";
+import { forbiddenRedirect, requirePermission } from "@/lib/authz";
 import { audit, logActivity } from "@/lib/audit";
 import { checkDocumentLimit, checkFeature } from "@/lib/plans";
 import { ValidationError, str, optionalStr } from "@/lib/validate";
 import { dispatchTrigger } from "@/lib/automations";
+import { computeTotals } from "@/lib/proposal-math";
+import { notify } from "@/lib/notifications";
 import { safeParse } from "@/lib/plans";
 
 export type ProposalState = { error?: string; notice?: string } | null;
@@ -44,13 +47,29 @@ function parseItems(form: FormData): ItemInput[] {
   return items;
 }
 
-function totals(items: ItemInput[], taxPercent: number) {
-  const subtotal = items.reduce((sum, i) => sum + i.amount_cents, 0);
-  const tax = Math.round((subtotal * taxPercent) / 100);
-  return { subtotal, tax, total: subtotal + tax };
+/**
+ * Server-side read of the discount controls. Anything non-numeric is treated as
+ * zero rather than being trusted, and the values are clamped.
+ */
+function readDiscount(form: FormData): { percent: number; cents: number } {
+  const percent = Math.min(100, Math.max(0, Number(form.get("discount_percent") ?? 0) || 0));
+  const cents = Math.max(0, Math.round((Number(form.get("discount_amount") ?? 0) || 0) * 100));
+  return { percent, cents };
+}
+
+/** How long a public share link stays valid. 0 or empty means never expires. */
+function readShareDays(form: FormData): number {
+  const raw = Number(form.get("share_expiry_days") ?? 30);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return Math.min(365, Math.round(raw));
 }
 
 export async function createProposalAction(_prev: ProposalState, form: FormData): Promise<ProposalState> {
+  try {
+    await requirePermission("proposal:write");
+  } catch (e) {
+    return handle(e);
+  }
   let id = "";
   try {
     const { user, membership } = await requireAuth();
@@ -70,7 +89,9 @@ export async function createProposalAction(_prev: ProposalState, form: FormData)
     const currency = (optionalStr(form.get("currency"), 8) || "USD").toUpperCase();
     const taxPercent = Math.min(100, Math.max(0, Number(form.get("tax_percent") ?? 0) || 0));
     const items = parseItems(form);
-    const { subtotal, tax, total } = totals(items, taxPercent);
+    const discount = readDiscount(form);
+    const shareDays = readShareDays(form);
+    const { subtotal, discount: discountCents, tax, total } = computeTotals(items, taxPercent, discount);
 
     const customerId = optionalStr(form.get("customer_id"), 60) || null;
     const leadId = optionalStr(form.get("lead_id"), 60) || null;
@@ -86,11 +107,12 @@ export async function createProposalAction(_prev: ProposalState, form: FormData)
     tx(() => {
       run(
         `insert into proposals (id, organization_id, customer_id, lead_id, created_by, title, client_name, client_email,
-            summary, scope, terms, currency, subtotal_cents, tax_cents, total_cents, status, share_token, version,
-            expires_at, created_at, updated_at)
-         values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            summary, scope, terms, currency, subtotal_cents, discount_cents, discount_percent, tax_cents, total_cents,
+            status, share_token, share_expires_at, version, expires_at, created_at, updated_at)
+         values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [id, orgId, customerId, leadId, user.id, title, clientName, clientEmail, summary, scope, terms, currency,
-         subtotal, tax, total, "draft", newShareToken(), 1, addDays(30).toISOString(), now, now]
+         subtotal, discountCents, Math.round(Number(discount.percent ?? 0)), tax, total,
+         "draft", newShareToken(), addDays(shareDays).toISOString(), 1, addDays(30).toISOString(), now, now]
       );
       items.forEach((item, index) => {
         run(
@@ -112,6 +134,11 @@ export async function createProposalAction(_prev: ProposalState, form: FormData)
 
 export async function updateProposalAction(_prev: ProposalState, form: FormData): Promise<ProposalState> {
   try {
+    try {
+      await requirePermission("proposal:write");
+    } catch (e) {
+      return handle(e);
+    }
     const { user, membership } = await requireAuth();
     const orgId = membership.organization_id;
     const id = str(form.get("proposal_id"), "Proposal", { min: 4 });
@@ -128,18 +155,22 @@ export async function updateProposalAction(_prev: ProposalState, form: FormData)
     const clientName = str(form.get("client_name"), "Client name", { min: 2, max: 120 });
     const taxPercent = Math.min(100, Math.max(0, Number(form.get("tax_percent") ?? 0) || 0));
     const items = parseItems(form);
-    const { subtotal, tax, total } = totals(items, taxPercent);
+    const discount = readDiscount(form);
+    const shareDays = readShareDays(form);
+    const { subtotal, discount: discountCents, tax, total } = computeTotals(items, taxPercent, discount);
 
     const now = nowIso();
     tx(() => {
       run(
         `update proposals set title = ?, client_name = ?, client_email = ?, summary = ?, scope = ?, terms = ?,
-            currency = ?, subtotal_cents = ?, tax_cents = ?, total_cents = ?, version = version + 1, updated_at = ?
+            currency = ?, subtotal_cents = ?, discount_cents = ?, discount_percent = ?, tax_cents = ?, total_cents = ?,
+            share_expires_at = coalesce(?, share_expires_at), version = version + 1, updated_at = ?
           where id = ? and organization_id = ?`,
         [title, clientName, optionalStr(form.get("client_email"), 160) || null,
          optionalStr(form.get("summary"), 4000) || null, optionalStr(form.get("scope"), 8000) || null,
          optionalStr(form.get("terms"), 4000) || null, (optionalStr(form.get("currency"), 8) || "USD").toUpperCase(),
-         subtotal, tax, total, now, id, orgId]
+         subtotal, discountCents, Math.round(Number(discount.percent ?? 0)), tax, total,
+         shareDays > 0 ? addDays(shareDays).toISOString() : null, now, id, orgId]
       );
       run("delete from proposal_items where proposal_id = ? and organization_id = ?", [id, orgId]);
       items.forEach((item, index) => {
@@ -167,6 +198,11 @@ export async function updateProposalAction(_prev: ProposalState, form: FormData)
 
 export async function sendProposalAction(_prev: ProposalState, form: FormData): Promise<ProposalState> {
   try {
+    try {
+      await requirePermission("proposal:write");
+    } catch (e) {
+      return handle(e);
+    }
     const { user, membership } = await requireAuth();
     const orgId = membership.organization_id;
     const id = str(form.get("proposal_id"), "Proposal", { min: 4 });
@@ -201,6 +237,11 @@ export async function sendProposalAction(_prev: ProposalState, form: FormData): 
 
 export async function setProposalStatusAction(_prev: ProposalState, form: FormData): Promise<ProposalState> {
   try {
+    try {
+      await requirePermission("proposal:write");
+    } catch (e) {
+      return handle(e);
+    }
     const { user, membership } = await requireAuth();
     const orgId = membership.organization_id;
     const id = str(form.get("proposal_id"), "Proposal", { min: 4 });
@@ -218,6 +259,11 @@ export async function setProposalStatusAction(_prev: ProposalState, form: FormDa
 }
 
 export async function deleteProposalAction(form: FormData): Promise<void> {
+  try {
+    await requirePermission("proposal:delete");
+  } catch {
+    forbiddenRedirect("proposal:delete");
+  }
   const { user, membership } = await requireAuth();
   const orgId = membership.organization_id;
   const id = String(form.get("proposal_id") ?? "");
@@ -243,6 +289,13 @@ export async function acceptProposalAction(_prev: ProposalState, form: FormData)
     if (proposal.status === "accepted") return { notice: "This proposal was already accepted. Thank you!" };
     if (proposal.status === "rejected") return { error: "This proposal was already declined." };
     if (proposal.expires_at && new Date(proposal.expires_at) < new Date()) return { error: "This proposal link has expired." };
+    const linkExpiry = get<{ share_expires_at: string | null }>(
+      "select share_expires_at from proposals where id = ?",
+      [proposal.id]
+    )?.share_expires_at;
+    if (linkExpiry && new Date(linkExpiry) < new Date()) {
+      return { error: "This share link has expired. Ask the sender to issue a new link." };
+    }
 
     const now = nowIso();
     run("update proposals set status = 'accepted', accepted_at = ?, updated_at = ? where id = ?", [now, now, proposal.id]);
@@ -251,6 +304,14 @@ export async function acceptProposalAction(_prev: ProposalState, form: FormData)
       action: "proposal.accepted", summary: `Client "${name}" accepted "${proposal.title}"`,
     });
     audit({ organizationId: proposal.organization_id, action: "proposal.accepted_public", targetType: "proposal", targetId: proposal.id, metadata: { name } });
+    notify({
+      organizationId: proposal.organization_id,
+      type: "proposal.accepted",
+      level: "success",
+      title: `Proposal accepted: ${proposal.title}`,
+      body: `${name} accepted the proposal.`,
+      href: `/proposals/${proposal.id}`,
+    });
     try {
       await dispatchTrigger(proposal.organization_id, "proposal.accepted", {
         type: "proposal", id: proposal.id, data: { id: proposal.id, accepted_by: name },
