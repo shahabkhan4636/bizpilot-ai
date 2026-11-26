@@ -1,0 +1,16 @@
+node_modules/
+.next/
+out/
+dist/
+data/*.db
+data/*.db-*
+.env
+.env.local
+*.log
+test-results/
+playwright-report/
+.DS_Store
+
+# local data & build artefacts
+data/uploads/
+tsconfig.tsbuildinfo
