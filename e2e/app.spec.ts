@@ -5,11 +5,39 @@ import Database from "better-sqlite3";
 
 const PG_URL = process.env.DATABASE_URL ?? "";
 const DB = path.join(process.cwd(), "data", "e2e.db");
-if (!PG_URL) {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    const f = `${DB}${suffix}`;
-    if (fs.existsSync(f)) fs.rmSync(f);
+
+/**
+ * Truncates the SQLite test database in place.
+ *
+ * The file must NOT be deleted: Playwright starts the web server before the test
+ * files load, and the server already holds an open handle. Deleting the file
+ * leaves that handle pointing at an unlinked inode while every direct reader in
+ * this file gets a brand-new empty database — which is exactly how a passing run
+ * turns into "no such table: organization_members".
+ */
+function resetSqlite() {
+  const db = new Database(DB);
+  db.pragma("journal_mode = WAL");
+  // Same rule as the app's boot path: `create … if not exists` is idempotent,
+  // `alter table … add column` is not, so only "already there" errors are ignored.
+  const statements = fs
+    .readFileSync(path.join(process.cwd(), "sql", "schema.sqlite.sql"), "utf8")
+    .replace(/^--.*$/gm, "")
+    .split(/;\s*(?:\r?\n|$)/)
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+  for (const statement of statements) {
+    try {
+      db.exec(statement);
+    } catch (e) {
+      if (!/duplicate column name|already exists|duplicate object/i.test(e instanceof Error ? e.message : String(e))) throw e;
+    }
   }
+  const tables = db
+    .prepare("select name from sqlite_master where type='table' and name not in ('plans','schema_migrations')")
+    .all() as { name: string }[];
+  for (const { name } of tables) db.prepare(`delete from "${name}"`).run();
+  db.close();
 }
 
 /** Truncates the Postgres test database so a run always starts clean. */
@@ -30,6 +58,7 @@ async function resetPostgres() {
 
 test.beforeAll(async () => {
   if (PG_URL) await resetPostgres();
+  else resetSqlite();
 });
 
 const stamp = Date.now();
@@ -529,4 +558,48 @@ test("readiness probe reports schema state and which providers are configured", 
   expect(body.providers).toHaveProperty("email");
   expect(body.providers).toHaveProperty("ai");
   expect(Array.isArray(body.warnings)).toBe(true);
+});
+
+test("strict CSP: no inline-script allowance, every page still hydrates and navigates", async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  const violations: string[] = [];
+  page.on("console", (msg) => {
+    const text = msg.text();
+    if (/Content Security Policy|Refused to (execute|load|apply)|\bCSP\b/i.test(text)) violations.push(text);
+  });
+  page.on("pageerror", (err) => {
+    if (/Content Security Policy|Refused to/i.test(err.message)) violations.push(err.message);
+  });
+
+  const user = { email: `owner.f.${stamp}@example.com`, password: "TestingPass123", name: "Owner F", company: `Zeta ${stamp}` };
+  await signup(page, user);
+
+  // The shipped policy must not contain an inline-script allowance.
+  const res = await page.request.get("/dashboard");
+  const csp = res.headers()["content-security-policy"] ?? "";
+  expect(csp).toContain("script-src");
+  expect(csp).not.toContain("'unsafe-inline'; script");
+  expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+  expect(csp).toMatch(/script-src[^;]*'nonce-[a-f0-9]+'/);
+  expect(csp).toMatch(/script-src[^;]*'strict-dynamic'/);
+  expect(csp).toContain("object-src 'none'");
+  expect(res.headers()["x-request-id"]).toBeTruthy();
+
+  // Client-side navigation across several routes exercises dynamic chunk loading.
+  for (const href of ["/leads", "/customers", "/proposals", "/automations", "/analytics", "/settings"]) {
+    await page.goto(href);
+    await expect(page.locator("header")).toBeVisible({ timeout: 20_000 });
+  }
+  await page.getByRole("link", { name: "Leads" }).first().click();
+  await page.waitForURL("**/leads", { timeout: 20_000 });
+
+  // Interactive behaviour proves hydration ran despite the strict policy.
+  await page.goto("/dashboard");
+  const toggle = page.getByRole("button", { name: "Switch to dark mode" });
+  await toggle.click();
+  expect(await page.evaluate(() => document.documentElement.className)).toMatch(/dark/);
+
+  expect(violations).toEqual([]);
+  await ctx.close();
 });

@@ -92,10 +92,25 @@ To get an admin panel, set `ADMIN_EMAIL` in `.env.local` **before** signing up w
 | `npm run build` / `npm start` | Production build / serve |
 | `npm run typecheck` | `tsc --noEmit` (strict) |
 | `npm run lint` | ESLint 9 flat config (Next + React hooks + TS rules) |
-| `npm test` | Vitest: unit + integration + API route tests (60 tests) |
-| `npm run test:e2e` | Playwright against a production build on port 3100 (12 tests) |
-| `npm run db:migrate` | Apply the schema + plan seed; `--status` prints row counts |
+| `npm test` | Vitest: unit + integration (100 tests) |
+| `npm run test:e2e` | Playwright against a production build on port 3100 (19 journeys) |
+| `npm run db:migrate` | Apply pending migrations; `--status`, `--down N`, `--to ID`, `--baseline` |
+| `npm run db:schema` | Regenerate `sql/schema.sqlite.sql`; `--check` fails if it is stale |
+| `npm run db:backup` | Verified backup (`pg_dump` / `VACUUM INTO`) → gzipped file |
+| `npm run db:restore` | Restore a backup, with destructive-command guardrails |
 | `npm run seed` | Create/reset the first account |
+
+### Documentation index
+
+| Doc | Read it when |
+| --- | --- |
+| `PROJECT_STATUS.md` | picking the work back up — current state, decisions, what is blocked |
+| `docs/DEFINITION-OF-DONE.md` | deciding whether something is actually finished |
+| `docs/DEPLOYMENT.md` | deploying, configuring providers, rolling back |
+| `docs/DATABASE.md` | migrations, engines, RLS, `--baseline` |
+| `docs/BACKUP-AND-RESTORE.md` | taking or restoring a backup |
+| `docs/TROUBLESHOOTING.md` | something is broken and `/api/readiness` is the first clue |
+| `PHASE-REPORT.md`, `PHASE-2-REPORT.md`, `PHASE-3-REPORT.md` | the audit trail of what changed, and what each phase proved |
 
 ## 5. Environment variables
 
@@ -290,6 +305,8 @@ catalogue, so the database must be reachable at build time.
 volume, and back them up.
 
 **GitHub:** this repository is already published at <https://github.com/shahabkhan4636/bizpilot-ai>.
+
+Full runbook, including post-deploy verification and rollback: **`docs/DEPLOYMENT.md`**.
 
 **Vercel (shortest path once Postgres is wired):**
 

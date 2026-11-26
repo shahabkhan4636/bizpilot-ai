@@ -20,7 +20,10 @@
     "test:postgres": "node scripts/test-postgres.mjs",
     "db:migrate:status": "node scripts/db-migrate.mjs --status",
     "db:migrate:down": "node scripts/db-migrate.mjs --down",
-    "db:schema": "node scripts/build-schema.mjs"
+    "db:schema": "node scripts/build-schema.mjs",
+    "db:backup": "node scripts/backup.mjs",
+    "db:restore": "node scripts/restore.mjs",
+    "verify": "node scripts/verify.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.6.0",

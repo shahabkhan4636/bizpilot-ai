@@ -16,8 +16,9 @@ asserted — the verification commands and their real output are in `PHASE-3-REP
 | Types | `npx tsc --noEmit` | ✅ clean, strict, 0 `any` |
 | Lint | `npx eslint .` | ✅ 0 errors / 0 warnings |
 | Unit + integration | `npx vitest run` | ✅ 100 passed, 10 skipped |
-| E2E on PostgreSQL | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ 18 passed |
-| E2E on SQLite | `npx playwright test` | ✅ 18 passed |
+| E2E on PostgreSQL | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ 19 passed |
+| E2E on SQLite | `npx playwright test` | ✅ 19 passed |
+| All gates | `npm run verify` (add `-- --e2e` for the suite) | ✅ green |
 | Production build | `npm run build` | ✅ 36 routes |
 | Readiness probe | `GET /api/readiness` | ✅ 200 with provider warnings |
 
@@ -48,13 +49,16 @@ src/app/                 36 routes (auth, dashboard, leads, customers, proposals
                          verify-email, forbidden, api/*)
 src/components/          ui primitives + feature forms (client components)
 src/lib/                 db, auth, authz, permissions, plans, notifications, automations, ai,
-                         email, email-verification, storage, stripe, logger, audit, validate, csv
+                         email, email-verification, storage, stripe, logger, audit, validate, csv,
+                         proposal-math, theme
+src/middleware.ts        per-request CSP nonce + x-request-id
 src/lib/actions/         every server action, permission-gated
 sql/migrations/          001…004 with up/down variants per engine
 sql/rls.postgres.sql     83 policies across 26 tables
 tests/                   vitest: unit, rls.live, rls.postgres, rbac-notifications, email-verification
 e2e/app.spec.ts          Playwright journeys A–G
-scripts/                 db-migrate, build-schema, seed, pg-worker, migrate-pg
+scripts/                 db-migrate, build-schema, seed, pg-worker, migrate-pg, backup, restore, verify
+docs/                    DEPLOYMENT, DATABASE, BACKUP-AND-RESTORE, TROUBLESHOOTING, DEFINITION-OF-DONE
 ```
 
 ## Setup
@@ -76,9 +80,15 @@ Logins for the seeded demo data: `demo@bizpilot.local / BizPilotDemo123` (SQLite
 1. **Live provider verification is BLOCKED** without credentials: Stripe checkout + webhooks, Resend
    delivery, AI generation, Dropbox storage, production `DATABASE_URL`, Vercel deploy. Each has a
    documented setup path in `.env.example` and a readiness warning; none is marked done.
-2. **CSP requires `'unsafe-inline'`** for Next's hydration script and the Tailwind stylesheet. A
-   nonce-based policy needs middleware and is the follow-up hardening step.
+2. **CSP is nonce-based for scripts; `style-src` still allows `'unsafe-inline'`** because CSP has no
+   nonce mechanism for inline style attributes (chart geometry). The consequence of the nonce policy
+   is that every route renders dynamically — static marketing pages are no longer prerendered. If
+   that ever matters for edge caching, the alternative is a per-route policy and a maintained
+   allowlist of prerendered routes.
 3. Playwright must run the whole file: the suite is serial and resets the database in `beforeAll`,
    so `-g` on a later test will fail on missing seed users by design.
 4. `data/bizpilot.db` is dev-only local state and is safe to delete; migrations recreate it.
 5. Rotate leaked tokens: GitHub `ghp_a5a6…`, Netlify `nfp_7CWU…`.
+6. Backups: `npm run db:backup` / `npm run db:restore` are verified for both engines (see
+   `docs/BACKUP-AND-RESTORE.md`), but nothing schedules them — production needs a cron entry or the
+   provider's own snapshots.

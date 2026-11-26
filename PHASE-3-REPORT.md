@@ -25,7 +25,9 @@ Date: 2026-08-09 · Engine: PostgreSQL 17 (primary) + SQLite (dev/fallback) · N
 | Notifications | `src/lib/notifications.ts` | 10 types, scoped per user and per organisation |
 | Email verification | `src/lib/email-verification.ts` | 48 h, single-use, sha256 at rest, one live token per user |
 | Account deletion | `src/lib/actions/account.ts` | password + typed confirmation, owner-blocked while teammates exist |
-| Security headers | `next.config.ts` | CSP, HSTS, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy |
+| Security headers | `next.config.ts` | HSTS, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy |
+| CSP with a nonce | `src/middleware.ts` | per-request nonce + `'strict-dynamic'`; **no `'unsafe-inline'` for scripts** |
+| Request id | `src/middleware.ts` | correlates a user-visible error digest with its server log line |
 
 ### Permission matrix (as enforced)
 
@@ -71,20 +73,48 @@ is immutable, and cannot be removed or self-removed.
 7. **Viewers still saw write affordances:** the header "New lead" button, the leads Import button,
    the empty-state "Import CSV", the proposals "New proposal" button and the documents upload card.
 
+## 3b. CSP hardening (after the first pass)
+
+The first pass shipped `script-src 'self' 'unsafe-inline'`, which is only marginally better than no
+CSP. It is now a nonce policy issued per request by `src/middleware.ts`:
+
+```
+script-src 'self' 'nonce-<per request>' 'strict-dynamic'; style-src 'self' 'unsafe-inline'
+```
+
+Three things had to be fixed to make that true rather than nominal:
+
+1. **Static pages carried scripts without the nonce.** `/`, `/pricing`, `/login` were prerendered, and
+   a cached page cannot hold a fresh nonce. The root layout now reads the request nonce from
+   `headers()`, which opts every route into dynamic rendering — the documented cost of a nonce
+   policy, and the reason the policy is uniform instead of allowlisting routes.
+2. **The theme bootstrap was inline without a nonce** and would have been blocked, causing a flash of
+   the wrong theme on every first paint. It moved from a client component into the root layout so it
+   can carry the nonce, with the script body living in `src/lib/theme.ts`.
+3. **A serial-suite landmine:** the e2e file deleted the SQLite database at import time, while the
+   web server that Playwright had already started held it open. That leaves the tests reading a
+   fresh, empty file ("no such table: organization_members"). Tests now truncate in place.
+
+Verified: `/`, `/pricing`, `/login`, `/signup`, `/p/[token]`, `/forgot-password` all render with
+**0 scripts missing a nonce**, client-side navigation across six routes works, the theme toggle
+flips `documentElement`, and the browser reports **no CSP violations** (asserted in the e2e suite).
+
 ## 4. Verification executed (real, not asserted)
 
 ```
 npx tsc --noEmit                 clean (0 errors, strict)
 npx eslint .                     0 errors, 0 warnings
 npx vitest run                   100 passed | 10 skipped (6 files)
-npx playwright test (postgres)   18 passed
-npx playwright test (sqlite)     18 passed
+npx playwright test (postgres)   19 passed
+npx playwright test (sqlite)     19 passed
+npm run verify                   all gates green in one command
 ```
 
 Live checks against `next start`:
 
 ```
-GET /login       → 200 + CSP, HSTS, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy
+GET /login       → 200 + nonce CSP, HSTS, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy
+GET /login       → every <script> carries the request nonce (0 without it)
 GET /api/readiness → 200 {"ready":true,"engine":"sqlite","checks":{"schema":{"ok":true},"migrations":{"ok":true}},...}
 GET /forbidden (unauthenticated) → 307 → /login
 ```

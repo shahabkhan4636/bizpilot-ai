@@ -3,12 +3,6 @@
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 
-/** Applied in <head> before paint to avoid a flash of the wrong theme. */
-export function ThemeScript() {
-  const code = `(function(){try{var t=localStorage.getItem('bizpilot-theme');var m=window.matchMedia('(prefers-color-scheme: dark)').matches;if(t==='dark'||(!t&&m)){document.documentElement.classList.add('dark');}}catch(e){}})();`;
-  return <script dangerouslySetInnerHTML={{ __html: code }} />;
-}
-
 export function ThemeToggle({ className = "" }: { className?: string }) {
   const [dark, setDark] = useState(false);
 
