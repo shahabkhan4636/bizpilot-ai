@@ -63,6 +63,20 @@ create table if not exists organizations (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists org_invites (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  email text not null,
+  role member_role not null default 'member',
+  token_hash text not null unique,
+  invited_by uuid references profiles(id) on delete set null,
+  expires_at timestamptz not null,
+  accepted_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists org_invites_org_idx on org_invites (organization_id);
+create index if not exists org_invites_email_idx on org_invites (lower(email));
+
 create table if not exists organization_members (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations(id) on delete cascade,
@@ -414,6 +428,7 @@ end $$;
 alter table profiles              enable row level security;
 alter table organizations         enable row level security;
 alter table organization_members  enable row level security;
+alter table org_invites            enable row level security;
 alter table plans                 enable row level security;
 alter table subscriptions         enable row level security;
 alter table leads                 enable row level security;
@@ -505,3 +520,17 @@ end $$;
 -- webhook_events: service-role only
 drop policy if exists webhook_admin on webhook_events;
 create policy webhook_admin on webhook_events for select using (is_super_admin());
+
+-- ---------------------------------------------------------------------------
+-- org_invites: admins of a workspace manage their own invitations only.
+-- The accept flow runs through the service role, never the browser.
+-- ---------------------------------------------------------------------------
+create policy org_invites_select on org_invites for select
+  using (organization_id in (select organization_id from organization_members
+                              where user_id = auth.uid() and role in ('owner','admin')) or is_super_admin());
+create policy org_invites_insert on org_invites for insert
+  with check (organization_id in (select organization_id from organization_members
+                                   where user_id = auth.uid() and role in ('owner','admin')));
+create policy org_invites_delete on org_invites for delete
+  using (organization_id in (select organization_id from organization_members
+                              where user_id = auth.uid() and role in ('owner','admin')) or is_super_admin());

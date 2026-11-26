@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Input, Label, Select } from "@/components/ui/input";
 import {
-  updateProfileAction, changePasswordAction, updateWorkspaceAction, inviteMemberAction,
+  updateProfileAction, changePasswordAction, updateWorkspaceAction,
   updateMemberRoleAction, removeMemberAction, type SettingsState,
 } from "@/lib/actions/settings";
 
@@ -101,30 +101,6 @@ export function WorkspaceForm({
         </div>
       </div>
       <Button type="submit" size="sm" disabled={pending}>{pending ? "Saving…" : "Save workspace"}</Button>
-    </form>
-  );
-}
-
-export function InviteMemberForm({ canManage }: { canManage: boolean }) {
-  const [state, action, pending] = useActionState(inviteMemberAction, null as SettingsState);
-  if (!canManage) return <p className="text-sm text-[hsl(var(--fg-muted))]">Only an owner or admin can add members.</p>;
-  return (
-    <form action={action} className="space-y-3">
-      <Feedback state={state} />
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor="member_email">Existing account email</Label>
-          <Input id="member_email" name="email" type="email" placeholder="teammate@company.com" required />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="member_role">Role</Label>
-          <Select id="member_role" name="role" defaultValue="member">
-            <option value="member">Member</option>
-            <option value="admin">Admin</option>
-          </Select>
-        </div>
-      </div>
-      <Button type="submit" size="sm" disabled={pending}>{pending ? "Adding…" : "Add member"}</Button>
     </form>
   );
 }

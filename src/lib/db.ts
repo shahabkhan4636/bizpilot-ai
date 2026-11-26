@@ -32,13 +32,10 @@ function initialise(): Database.Database {
   database.pragma("journal_mode = WAL");
   database.pragma("foreign_keys = ON");
 
-  const hasPlans = database
-    .prepare("select name from sqlite_master where type='table' and name='plans'")
-    .get() as { name?: string } | undefined;
-
-  if (!hasPlans) {
-    database.exec(readSql("schema.sqlite.sql"));
-  }
+  // The schema is written entirely with `create table if not exists` /
+  // `create index if not exists`, so applying it on every boot is safe and means
+  // an existing database picks up newly added tables without a manual migration.
+  database.exec(readSql("schema.sqlite.sql"));
   // Idempotent plan seed (upsert) so pricing can change without code edits.
   database.exec(readSql("seed_plans.sql"));
   return database;

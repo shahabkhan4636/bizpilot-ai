@@ -8,7 +8,7 @@ import { audit, logActivity } from "@/lib/audit";
 import { checkAutomationLimit } from "@/lib/plans";
 import { ValidationError, str, optionalStr, oneOf } from "@/lib/validate";
 import { dispatchTrigger, testAutomation, type TriggerEntity } from "@/lib/automations";
-import { TRIGGERS, type TriggerType, type ActionType } from "@/lib/automation-meta";
+import { TRIGGERS, ACTIONS, type TriggerType, type ActionType } from "@/lib/automation-meta";
 import { createAutomationWithSteps } from "@/lib/automations";
 
 export type AutomationState = {
@@ -36,34 +36,87 @@ export async function createAutomationAction(_prev: AutomationState, form: FormD
     const triggerType = oneOf(form.get("trigger_type"), "Trigger", TRIGGERS, "lead.created") as TriggerType;
     const runLimit = Math.max(1, Math.min(5000, Number(form.get("run_limit_per_day") ?? 100) || 100));
 
-    const conditions: { field: string; op: "equals" | "not_equals" | "gt" | "lt" | "contains" | "exists"; value?: string }[] = [];
-    const fields = form.getAll("condition_field").map((v) => String(v).trim());
-    const ops = form.getAll("condition_op").map((v) => String(v));
-    const values = form.getAll("condition_value").map((v) => String(v));
-    fields.forEach((field, i) => {
-      if (!field) return;
-      const op = (ops[i] ?? "equals") as "equals" | "not_equals" | "gt" | "lt" | "contains" | "exists";
-      conditions.push({ field, op, value: values[i] ?? "" });
-    });
+    type Cond = { field: string; op: "equals" | "not_equals" | "gt" | "lt" | "contains" | "exists"; value?: string };
+    const ALLOWED_OPS = new Set(["equals", "not_equals", "gt", "lt", "contains", "exists"]);
+    const ALLOWED_TRIGGER_FIELDS = new Set(["status", "source", "value_cents", "company", "email", "name", "notes"]);
 
-    const steps: { actionType: ActionType; config: Record<string, unknown>; requiresApproval: boolean }[] = [];
-    const actions = form.getAll("step_action").map((v) => String(v));
-    const configs = form.getAll("step_config").map((v) => String(v));
-    actions.forEach((action, i) => {
-      if (!action) return;
-      let config: Record<string, unknown> = {};
-      const raw = (configs[i] ?? "").trim();
-      if (raw) {
-        try {
-          config = JSON.parse(raw) as Record<string, unknown>;
-        } catch {
-          throw new ValidationError(`Step ${i + 1}: configuration must be valid JSON.`);
-        }
+    // The builder posts JSON arrays; the older parallel-array form is still accepted.
+    const conditions: Cond[] = [];
+    const rawConditions = String(form.get("conditions_json") ?? "").trim();
+    if (rawConditions) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(rawConditions);
+      } catch {
+        throw new ValidationError("Conditions were not valid JSON.");
       }
-      // External-facing actions always require approval unless explicitly disabled below.
-      steps.push({ actionType: action as ActionType, config, requiresApproval: action !== "send_email" ? false : true });
-    });
+      if (!Array.isArray(parsed)) throw new ValidationError("Conditions must be a list.");
+      for (const item of parsed) {
+        const c = item as { field?: unknown; op?: unknown; value?: unknown };
+        const field = String(c.field ?? "").trim();
+        if (!field) continue;
+        if (!ALLOWED_TRIGGER_FIELDS.has(field)) throw new ValidationError(`Condition field "${field}" is not supported.`);
+        const op = String(c.op ?? "equals");
+        if (!ALLOWED_OPS.has(op)) throw new ValidationError(`Condition operator "${op}" is not supported.`);
+        conditions.push({ field, op: op as Cond["op"], value: String(c.value ?? "") });
+      }
+    } else {
+      const fields = form.getAll("condition_field").map((v) => String(v).trim());
+      const ops = form.getAll("condition_op").map((v) => String(v));
+      const values = form.getAll("condition_value").map((v) => String(v));
+      fields.forEach((field, i) => {
+        if (!field) return;
+        conditions.push({ field, op: ((ops[i] ?? "equals") as Cond["op"]), value: values[i] ?? "" });
+      });
+    }
+
+    type StepInput = { actionType: ActionType; config: Record<string, unknown>; requiresApproval: boolean };
+    const steps: StepInput[] = [];
+    const rawSteps = String(form.get("steps_json") ?? "").trim();
+    if (rawSteps) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(rawSteps);
+      } catch {
+        throw new ValidationError("Steps were not valid JSON.");
+      }
+      if (!Array.isArray(parsed)) throw new ValidationError("Steps must be a list.");
+      for (const [i, item] of parsed.entries()) {
+        const s = item as { action?: unknown; config?: unknown };
+        const actionType = String(s.action ?? "");
+        if (!actionType) continue;
+        if (!(ACTIONS as readonly string[]).includes(actionType)) {
+          throw new ValidationError(`Step ${i + 1}: "${actionType}" is not a known action.`);
+        }
+        const config =
+          s.config && typeof s.config === "object" ? (s.config as Record<string, unknown>) : {};
+        steps.push({
+          actionType: actionType as ActionType,
+          config,
+          // External-facing actions always need human approval.
+          requiresApproval: actionType === "send_email",
+        });
+      }
+    } else {
+      const actions = form.getAll("step_action").map((v) => String(v));
+      const configs = form.getAll("step_config").map((v) => String(v));
+      actions.forEach((action, i) => {
+        if (!action) return;
+        let config: Record<string, unknown> = {};
+        const raw = (configs[i] ?? "").trim();
+        if (raw) {
+          try {
+            config = JSON.parse(raw) as Record<string, unknown>;
+          } catch {
+            throw new ValidationError(`Step ${i + 1}: configuration must be valid JSON.`);
+          }
+        }
+        steps.push({ actionType: action as ActionType, config, requiresApproval: action === "send_email" });
+      });
+    }
+
     if (steps.length === 0) throw new ValidationError("Add at least one action step.");
+    if (steps.length > 10) throw new ValidationError("An automation can have at most 10 steps.");
 
     const id = createAutomationWithSteps({
       organizationId: orgId, createdBy: user.id, name, description, triggerType, conditions, steps,

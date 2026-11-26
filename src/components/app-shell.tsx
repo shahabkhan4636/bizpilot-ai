@@ -5,8 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, UserSquare2, Bot, FileText, FolderOpen, Workflow,
-  BarChart3, CreditCard, Settings, ShieldCheck, LifeBuoy, Menu, X, LogOut, Plus,
-} from "lucide-react";
+  BarChart3, CreditCard, Settings, ShieldCheck, LifeBuoy, Menu, X, LogOut, Plus, Inbox } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
 import { Button } from "./ui/button";
@@ -17,6 +16,7 @@ const nav = [
   { href: "/leads", label: "Leads", icon: UserSquare2 },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/ai-assistant", label: "AI assistant", icon: Bot },
+  { href: "/approvals", label: "Approvals", icon: Inbox },
   { href: "/proposals", label: "Proposals", icon: FileText },
   { href: "/documents", label: "Documents", icon: FolderOpen },
   { href: "/automations", label: "Automations", icon: Workflow },

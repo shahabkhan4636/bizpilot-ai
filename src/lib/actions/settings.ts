@@ -2,13 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { run, get } from "@/lib/db";
-import { newId } from "@/lib/ids";
 import { nowIso } from "@/lib/utils";
 import { requireAuth } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { hashPassword, verifyPassword, passwordProblems } from "@/lib/password";
-import { getEffectivePlan } from "@/lib/plans";
-import { ValidationError, str, email as emailField, optionalStr, oneOf } from "@/lib/validate";
+import { ValidationError, str, optionalStr, oneOf } from "@/lib/validate";
 
 export type SettingsState = { error?: string; notice?: string } | null;
 
@@ -75,44 +73,6 @@ export async function updateWorkspaceAction(_prev: SettingsState, form: FormData
   }
   revalidatePath("/settings");
   return { notice: "Workspace settings saved." };
-}
-
-/** Adds an existing account to this workspace, respecting the plan's member limit. */
-export async function inviteMemberAction(_prev: SettingsState, form: FormData): Promise<SettingsState> {
-  try {
-    const { user, membership } = await requireAuth();
-    const orgId = membership.organization_id;
-    if (membership.role !== "owner" && membership.role !== "admin") return { error: "Only an owner or admin can invite members." };
-
-    const plan = getEffectivePlan(orgId);
-    const count = get<{ c: number }>("select count(*) as c from organization_members where organization_id = ?", [orgId])?.c ?? 0;
-    if (count >= plan.member_limit) {
-      return { error: `The ${plan.name} plan allows ${plan.member_limit} member(s). Upgrade on the billing page to add more.` };
-    }
-
-    const email = emailField(form.get("email")).toLowerCase();
-    const role = oneOf(form.get("role"), "Role", ["member", "admin"] as const, "member");
-
-    const target = get<{ id: string; email: string }>("select id, email from profiles where lower(email) = ?", [email]);
-    if (!target) {
-      return {
-        error:
-          "No account exists for that email yet. Ask them to sign up first, then add them here — invitations by email require the email provider to be configured.",
-      };
-    }
-    if (get("select id from organization_members where organization_id = ? and user_id = ?", [orgId, target.id])) {
-      return { error: "That person is already a member of this workspace." };
-    }
-
-    run("insert into organization_members (id, organization_id, user_id, role, created_at) values (?,?,?,?,?)", [
-      newId(), orgId, target.id, role, nowIso(),
-    ]);
-    audit({ organizationId: orgId, actorId: user.id, action: "org.member_added", metadata: { role } });
-  } catch (e) {
-    return handle(e);
-  }
-  revalidatePath("/settings");
-  return { notice: "Member added to the workspace." };
 }
 
 export async function updateMemberRoleAction(_prev: SettingsState, form: FormData): Promise<SettingsState> {

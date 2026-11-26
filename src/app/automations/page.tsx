@@ -7,9 +7,8 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState, Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
-import {
-  NewAutomationPanel, TestAutomationForm, RetryButton, AutomationRowActions,
-} from "@/components/automations/automation-forms";
+import { TestAutomationForm, RetryButton, AutomationRowActions } from "@/components/automations/automation-forms";
+import { AutomationBuilder } from "@/components/automations/automation-builder";
 import { listAutomationsWithStats } from "@/lib/actions/automations";
 import { executionHistory } from "@/lib/automations";
 import { TRIGGER_LABEL } from "@/lib/automation-meta";
@@ -58,7 +57,7 @@ export default async function AutomationsPage() {
         <StatCard label="Failures" value={String(failures)} tone={failures > 0 ? "warn" : "default"} />
       </div>
 
-      {automationAllowed ? <div className="mb-4"><NewAutomationPanel /></div> : null}
+      {automationAllowed ? <div className="mb-4"><AutomationBuilder leadCount={leads.length} /></div> : null}
 
       <Card className="mb-4">
         <CardHeader>

@@ -25,6 +25,51 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
     "select id, event_type, created_at, processed_at, error from webhook_events where provider = 'stripe' order by created_at desc limit 20"
   );
 
+  // Invoices are reconstructed from webhook payloads that arrived with a verified
+  // signature. Nothing here is invented: if Stripe never sent an invoice event,
+  // the table stays empty.
+  const invoiceEvents = all<{ external_id: string; event_type: string; payload: string; created_at: string }>(
+    `select external_id, event_type, payload, created_at from webhook_events
+      where provider = 'stripe' and event_type in ('invoice.paid','invoice.payment_failed','invoice.payment_succeeded')
+      order by created_at desc limit 24`
+  );
+
+  type InvoiceRow = {
+    id: string;
+    number: string;
+    amount: number;
+    currency: string;
+    status: string;
+    paid: boolean;
+    url: string | null;
+    period: string;
+    received: string;
+  };
+
+  const invoices: InvoiceRow[] = [];
+  for (const ev of invoiceEvents) {
+    try {
+      const parsed = JSON.parse(ev.payload) as { data?: { object?: Record<string, unknown> } };
+      const o = parsed?.data?.object ?? {};
+      const amount = typeof o.amount_paid === "number" ? o.amount_paid : typeof o.amount_due === "number" ? o.amount_due : null;
+      if (amount === null) continue;
+      const created = typeof o.created === "number" ? new Date(o.created * 1000).toISOString() : ev.created_at;
+      invoices.push({
+        id: String(o.id ?? ev.external_id),
+        number: typeof o.number === "string" && o.number ? o.number : String(o.id ?? "—"),
+        amount,
+        currency: String(o.currency ?? "usd").toUpperCase(),
+        status: String(o.status ?? (ev.event_type === "invoice.paid" ? "paid" : "failed")),
+        paid: ev.event_type !== "invoice.payment_failed" && (o.status === "paid" || ev.event_type === "invoice.paid"),
+        url: typeof o.hosted_invoice_url === "string" ? o.hosted_invoice_url : null,
+        period: created,
+        received: ev.created_at,
+      });
+    } catch {
+      // A stored payload we cannot parse simply does not produce an invoice row.
+    }
+  }
+
   const sub = ctx.subscription;
   const cycle = sub?.billing_cycle === "annual" ? "annual" : "monthly";
   const priceId = stripePriceId(ctx.plan.code, cycle);
@@ -68,6 +113,53 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Invoices &amp; receipts</CardTitle>
+              <CardDescription>
+                Built only from signature-verified Stripe invoice events stored by the webhook endpoint. Amounts are shown
+                exactly as Stripe reported them.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {invoices.length === 0 ? (
+                <EmptyState
+                  title="No invoices recorded"
+                  description={
+                    stripeReady
+                      ? "Invoice events appear here after Stripe sends invoice.paid or invoice.payment_failed to the webhook endpoint."
+                      : "Stripe is not configured in this environment, so no invoice can exist yet."
+                  }
+                />
+              ) : (
+                <Table>
+                  <THead>
+                    <TR><TH>Invoice</TH><TH>Date</TH><TH>Amount</TH><TH>Status</TH><TH>Receipt</TH></TR>
+                  </THead>
+                  <TBody>
+                    {invoices.map((inv) => (
+                      <TR key={`${inv.id}-${inv.received}`}>
+                        <TD className="font-mono text-xs">{inv.number}</TD>
+                        <TD>{formatDate(inv.period)}</TD>
+                        <TD>{formatMoney(inv.amount, inv.currency.toLowerCase())}</TD>
+                        <TD>
+                          <Badge tone={inv.paid ? "success" : "warning"}>{inv.status}</Badge>
+                        </TD>
+                        <TD>
+                          {inv.url ? (
+                            <a className="text-brand-700 underline" href={inv.url} rel="noreferrer noopener" target="_blank">Open</a>
+                          ) : (
+                            <span className="text-xs text-[hsl(var(--fg-muted))]">—</span>
+                          )}
+                        </TD>
+                      </TR>
+                    ))}
+                  </TBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Plans</CardTitle>

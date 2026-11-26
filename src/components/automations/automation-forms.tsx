@@ -1,96 +1,15 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { FlaskConical, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { useActionState } from "react";
+import { FlaskConical, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
-import { Input, Label, Select } from "@/components/ui/input";
+import { Label, Select } from "@/components/ui/input";
 import {
-  createAutomationAction, testAutomationAction, retryExecutionAction,
+  testAutomationAction, retryExecutionAction,
   deleteAutomationAction, toggleAutomationAction, type AutomationState,
 } from "@/lib/actions/automations";
-import { TRIGGERS, TRIGGER_LABEL, ACTIONS, ACTION_LABEL } from "@/lib/automation-meta";
 
-const CONDITION_FIELDS = ["status", "source", "value_cents", "company", "email", "name"];
-const OPS = [
-  { value: "equals", label: "equals" },
-  { value: "not_equals", label: "does not equal" },
-  { value: "contains", label: "contains" },
-  { value: "gt", label: "greater than" },
-  { value: "lt", label: "less than" },
-  { value: "exists", label: "is present" },
-];
-
-export function NewAutomationPanel() {
-  const [state, action, pending] = useActionState(createAutomationAction, null as AutomationState);
-  const [open, setOpen] = useState(false);
-
-  if (!open) return <Button size="sm" onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> New automation</Button>;
-
-  return (
-    <form action={action} className="space-y-4 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface))] p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-semibold">Build an automation</h2>
-        <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-      </div>
-      {state?.error ? <Alert tone="danger" title="Could not create">{state.error}</Alert> : null}
-      {state?.notice ? <Alert tone="success">{state.notice}</Alert> : null}
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="name">Name *</Label>
-          <Input id="name" name="name" required placeholder="Welcome new website leads" />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="trigger_type">Trigger *</Label>
-          <Select id="trigger_type" name="trigger_type" defaultValue="lead.created">
-            {TRIGGERS.map((t) => <option key={t} value={t}>{TRIGGER_LABEL[t]}</option>)}
-          </Select>
-        </div>
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor="description">Description</Label>
-          <Input id="description" name="description" placeholder="What this automation is for" />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="run_limit_per_day">Max runs per day</Label>
-          <Input id="run_limit_per_day" name="run_limit_per_day" type="number" min={1} max={5000} defaultValue={100} />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <p className="text-sm font-medium">Conditions (all must match)</p>
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="grid grid-cols-12 gap-2">
-            <Select className="col-span-4" name="condition_field" defaultValue={i === 0 ? "" : ""} aria-label={`Condition ${i + 1} field`}>
-              <option value="">No condition</option>
-              {CONDITION_FIELDS.map((f) => <option key={f} value={f}>{f}</option>)}
-            </Select>
-            <Select className="col-span-4" name="condition_op" defaultValue="equals" aria-label={`Condition ${i + 1} operator`}>
-              {OPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </Select>
-            <Input className="col-span-4" name="condition_value" placeholder="value" aria-label={`Condition ${i + 1} value`} />
-          </div>
-        ))}
-      </div>
-
-      <div className="space-y-2">
-        <p className="text-sm font-medium">Steps (run in order)</p>
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="grid grid-cols-12 gap-2">
-            <Select className="col-span-6" name="step_action" aria-label={`Step ${i + 1} action`}>
-              <option value="">No step</option>
-              {ACTIONS.map((a) => <option key={a} value={a}>{ACTION_LABEL[a]}</option>)}
-            </Select>
-            <Input className="col-span-6" name="step_config" placeholder='config JSON, e.g. {"title":"Call the lead"}' aria-label={`Step ${i + 1} config`} />
-          </div>
-        ))}
-        <p className="text-xs text-[hsl(var(--fg-muted))]">Email steps always require approval — the engine queues them as pending approval.</p>
-      </div>
-
-      <Button type="submit" disabled={pending}>{pending ? "Creating…" : "Create automation"}</Button>
-    </form>
-  );
-}
 
 export function TestAutomationForm({ automationId, leads }: { automationId: string; leads: { id: string; name: string }[] }) {
   const [state, action, pending] = useActionState(testAutomationAction, null as AutomationState);

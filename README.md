@@ -22,29 +22,35 @@ invented customer list and no fabricated social proof anywhere in the marketing 
 | Customers: create, edit, delete, convert from lead, linked proposals/documents | Working |
 | AI sales assistant (9 content types, tone/language/objective/pricing, edit, save, regenerate) | Working; requires `AI_API_KEY` for real generation |
 | Approval gate before any external send | Enforced server-side; nothing sends without an explicit checkbox |
+| `/approvals` queue | Every message an automation or the assistant queues is listed, with approve/reject and an honest "approved, unsent" state |
+| Team invitations | Real `org_invites` rows, 7-day single-use tokens, seat limits per plan, email send or link hand-over when no provider is configured |
+| Automation builder | Client-side builder: trigger, N conditions, N ordered steps with per-action fields, live pipeline preview, server-side validation |
 | Proposals: line items, tax, versions, share link, client accept/decline, PDF | Working |
 | Client portal `/p/<token>` | Working, token-scoped |
 | Documents upload (10 MB cap, type allow-list) | Local disk by default, Dropbox when tokens are set |
 | Automations: 8 triggers, 7 actions, conditions, daily run limit, idempotency, logs, retry, dry-run test | Working |
 | Analytics | Live funnel, source, owner and 6-month trend |
-| Billing: plan display, usage, Stripe Checkout, portal, cancel | Working; needs Stripe keys |
+| Billing: plan display, usage, invoices from verified webhook payloads, Checkout, portal, cancel | Working; needs Stripe keys |
 | Stripe webhooks | Signature verified, deduped, subscription state machine |
 | Admin panel (super-admin only): plan editor, workspaces, suspend, audit log, webhook log | Working |
 | Public lead capture API `/api/leads/capture` | Working when `LEAD_CAPTURE_KEY` is set |
 | Emails | Requires `RESEND_API_KEY`; without it the app says so and stores the message as approved-but-unsent |
-| Row level security | Defined in `sql/schema.postgres.sql`; active once you run against Supabase Postgres |
+| Row level security | Policies in `sql/schema.postgres.sql`, **executed and asserted by 12 tests** against a real PostgreSQL engine (PGlite) — see section 7 |
 
 **Honest limitations you must know before selling this:**
 
-1. The runtime data layer uses **SQLite** (`better-sqlite3`). The Postgres/Supabase schema with RLS exists and is
-   complete, but the Postgres adapter is *not* wired in code yet — see section 7. Until you do that, tenant isolation is
-   enforced by application code (`organization_id` on every query) and not by RLS.
+1. The runtime data layer uses **SQLite** (`better-sqlite3`). The Postgres/Supabase schema with RLS is complete and is
+   now **proven by a test suite that runs it on a real PostgreSQL engine** (`tests/rls.postgres.test.ts`, 12 assertions:
+   cross-tenant reads return nothing, cross-tenant writes are rejected, super-admin sees all). The Postgres *driver* is
+   still not wired into the request path — see section 7. Until that step is done, tenant isolation in the running app
+   comes from application code (`organization_id` on every query), not from RLS.
 2. No payment provider, AI provider, email provider or Dropbox credentials were available while building, so those paths
    were verified against their failure modes (signature rejection, `not_configured` states, unit tests) but **not**
    against the live third-party service. Configure the keys and re-run the checklist in section 9 before charging anyone.
 3. There is no queue worker. Automation steps run inline on the request that fired the trigger. That is fine at SMB
    volume; move `dispatchTrigger` to a queue (Inngest, QStash, Supabase cron) before high traffic.
-4. Invoices are not stored: the billing page shows raw Stripe webhook deliveries instead of a rendered invoice list.
+4. Invoices are derived, not stored: the billing page builds the invoice list from signature-verified
+   `invoice.*` webhook payloads. If Stripe never delivered an invoice event there is nothing to show, and the page says so.
 
 ---
 
@@ -129,24 +135,41 @@ page** — `/billing?checkout=returned` explicitly says the change is pending un
 
 ## 7. Switching to Supabase Postgres
 
-The Postgres schema is complete: enums, ~26 tables, `updated_at` triggers, `auth_user_org_ids()` and `is_super_admin()`
-helpers, and per-table RLS policies.
+The Postgres schema is complete: enums, ~27 tables, `updated_at` triggers, `auth_user_org_ids()` and `is_super_admin()`
+helpers, and per-table RLS policies (including `org_invites`).
 
-```bash
-psql "$DATABASE_URL" -f sql/schema.postgres.sql
-psql "$DATABASE_URL" -f sql/seed_plans.sql   # plans are the same rows as SQLite
-```
+### What is already verified
 
-What is still required in code (this is the one deliberately unfinished piece):
+`tests/rls.postgres.test.ts` boots the real schema on a real PostgreSQL engine (PGlite, in-process) and asserts, by
+executing queries:
 
-1. Add a Postgres driver (`postgres` or `pg`) and implement the same `all/get/run/tx` surface as `src/lib/db.ts`.
-2. Set the request's user JWT on the connection so RLS policies apply (`auth.uid()`), instead of the current
-   `organization_id` filtering.
+* `auth` shim (`sql/local-postgres-shim.sql`) provides `auth.users`, `auth.uid()` and `auth.role()` for non-Supabase runs
+* cross-tenant `select` returns zero rows for another workspace's leads, customers, proposals, documents, messages
+* cross-tenant `insert` is rejected by the `with check` policies
+* an owner can read their own workspace's rows; `is_super_admin()` sees every workspace
+* `plans` is readable but not writable by a normal user
+* every assertion runs as a non-owner role (`app_user`), because a table owner bypasses RLS
+
+Run it with `npm test` (part of the 72-test suite). This is the strongest possible evidence short of a live Supabase
+project, and it means the policies themselves are correct — not just present.
+
+### What is still required in code
+
+1. Implement the same `all/get/run/tx` surface as `src/lib/db.ts` over `pg`/`postgres` (async — every call site must be
+   awaited, and `count(*)` needs `::int` casts because Postgres returns `bigint`) and select the driver from
+   `DATABASE_URL`.
+2. Set the request's user JWT on the connection so RLS applies (`set local request.jwt.claim.sub = …`) instead of the
+   current `organization_id` filtering.
 3. Move the dev-only tables (`sessions`, `password_resets`, `rate_limits`) to Supabase Auth + Upstash/Postgres
    equivalents.
 
-`src/lib/db.ts` documents this gap at the top of the file. Do not describe the deployment as "RLS-protected" until
-step 2 is done.
+```bash
+psql "$DATABASE_URL" -f sql/schema.postgres.sql
+psql "$DATABASE_URL" -f sql/seed_plans.postgres.sql
+```
+
+**Do not describe the deployment as "RLS-protected"** until step 2 is done: the policies are proven, the runtime is not
+yet using them.
 
 ## 8. Dropbox setup
 
@@ -161,6 +184,10 @@ step 2 is done.
 Files live in Dropbox; every record (lead, customer, proposal, invoice-like totals) stays in Postgres/SQLite.
 
 ## 9. QA checklist (run before selling)
+
+Automated today: `npx tsc --noEmit`, `npm run lint`, `npm test` (72 tests), `npx playwright test` (15 browser tests
+against a production build, including the invitation flow, the automation builder running on a real lead, and the
+approval gate).
 
 ```bash
 npm run typecheck && npm run lint && npm test && npm run build && npm run test:e2e
@@ -227,7 +254,17 @@ pre-paint script to avoid a flash. Icons come from `lucide-react`.
 **Self-hosted:** `npm ci && npm run build && npm start`. Put the SQLite file (`data/`) and `data/uploads` on a persistent
 volume, and back them up.
 
-**GitHub:** `git init && git add -A && git commit -m "BizPilot AI" && git remote add origin <url> && git push -u origin main`.
+**GitHub:** this repository is already published at <https://github.com/shahabkhan4636/bizpilot-ai>.
+
+**Vercel (shortest path once Postgres is wired):**
+
+```bash
+npm i -g vercel
+vercel link            # pick the repo
+vercel env add DATABASE_URL production
+vercel env add STRIPE_SECRET_KEY production   # ...repeat for section 5
+vercel --prod
+```
 
 Never commit `.env.local`, `data/`, or `node_modules/` — they are already in `.gitignore`.
 
