@@ -28,6 +28,39 @@ export type PendingRequestRow = {
   reference: string | null;
 };
 
+/**
+ * Puts a workspace on a plan and returns the period end.
+ *
+ * Shared by the workspace flow (a customer paying the customer) and the platform
+ * flow (a customer paying BizPilot): both must mean exactly the same thing by
+ * "active", so the write exists once.
+ */
+export function ensureSubscriptionPlan(input: {
+  organizationId: string;
+  planCode: string;
+  billingCycle: BillingCycle;
+  now?: string;
+}): string {
+  const now = input.now ?? nowIso();
+  const periodEnd = periodEndFrom(input.billingCycle, new Date(now));
+  const existing = get<{ id: string }>("select id from subscriptions where organization_id = ?", [input.organizationId]);
+  if (existing) {
+    run(
+      `update subscriptions set plan_code = ?, status = 'active', billing_cycle = ?, current_period_end = ?,
+              cancel_at_period_end = 0, trial_ends_at = null, updated_at = ?
+        where organization_id = ?`,
+      [input.planCode, input.billingCycle, periodEnd, now, input.organizationId]
+    );
+  } else {
+    run(
+      `insert into subscriptions (id, organization_id, plan_code, status, billing_cycle, current_period_end, created_at, updated_at)
+       values (?,?,?,?,?,?,?,?)`,
+      [newId(), input.organizationId, input.planCode, "active", input.billingCycle, periodEnd, now, now]
+    );
+  }
+  return periodEnd;
+}
+
 export type ApproveInput = {
   organizationId: string;
   requestId: string;
@@ -85,22 +118,12 @@ export function approveLocalPaymentRequest(input: ApproveInput): ApproveOutcome 
     return { ok: false, message: "That payment was already reviewed by someone else." };
   }
 
-  const periodEnd = periodEndFrom(request.billing_cycle, new Date());
-  const existing = get<{ id: string }>("select id from subscriptions where organization_id = ?", [input.organizationId]);
-  if (existing) {
-    run(
-      `update subscriptions set plan_code = ?, status = 'active', billing_cycle = ?, current_period_end = ?,
-              cancel_at_period_end = 0, trial_ends_at = null, updated_at = ?
-        where organization_id = ?`,
-      [request.plan_code, request.billing_cycle, periodEnd, now, input.organizationId]
-    );
-  } else {
-    run(
-      `insert into subscriptions (id, organization_id, plan_code, status, billing_cycle, current_period_end, created_at, updated_at)
-       values (?,?,?,?,?,?,?,?)`,
-      [newId(), input.organizationId, request.plan_code, "active", request.billing_cycle, periodEnd, now, now]
-    );
-  }
+  const periodEnd = ensureSubscriptionPlan({
+    organizationId: input.organizationId,
+    planCode: request.plan_code,
+    billingCycle: request.billing_cycle,
+    now,
+  });
 
   const via = input.gateway ? `${input.gateway.provider}:${input.gateway.paymentId}` : "manual approval";
   audit({

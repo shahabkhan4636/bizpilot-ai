@@ -2,10 +2,16 @@
 
 _Last updated: 2026-08-09 · branch `main` · this file is the continuity record: read it first._
 
-**Newest work:** Phase 2 — email outbox (`email_outbox`, migration 010): every
-transactional email is stored before it is dispatched, retried on a 5 min / 30 min /
-2 h schedule, never abandoned when `RESEND_API_KEY` is missing, and managed from
-`/admin/email`. **Earlier:** real wallet-gateway adapters (SadaPay / JazzCash / Easypaisa) behind
+**Newest work:** Phase 3 — platform payments (migration 011: `platform_settings`,
+`platform_payment_claims`, `founding_memberships`). A customer sends rupees to the
+owner's **own** wallet/IBAN (numbers typed by the owner on `/admin/platform-payments`,
+never in source), submits the transaction ID on `/billing/platform`, and the owner's
+approval activates the plan immediately. The Founding Member offer (Rs 1,500/mo,
+10 slots, Starter limits + 3 seats) is granted automatically on approval and its price
+is **locked in the database** — renewals read `founding_memberships.locked_price_cents`,
+so a later catalogue price rise cannot touch an existing member. `/billing/local`
+(a customer's own clients paying them) is untouched and now has a regression suite.
+**Earlier:** email outbox (migration 010, retry 5 min / 30 min / 2 h, `/admin/email`); real wallet-gateway adapters (SadaPay / JazzCash / Easypaisa) behind
 `/api/payments/webhook/<provider>` with signature verification, idempotency and
 amount matching; refunds with `payment_refunds`; CI (`verify.yml`, `backup.yml`);
 PKR-first marketing copy. Migration **009** applied to SQLite, both local Postgres
@@ -24,13 +30,13 @@ asserted — the verification commands and their real output are in `PHASE-3-REP
 | --- | --- | --- |
 | Types | `npx tsc --noEmit` | ✅ clean, strict, 0 `any` |
 | Lint | `npx eslint .` | ✅ 0 errors / 0 warnings |
-| Unit + integration | `npx vitest run` | ✅ 241 passed, 10 skipped (15 files) |
-| E2E on PostgreSQL | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ 29 passed |
-| E2E on SQLite | `npx playwright test` | ✅ 29 passed |
+| Unit + integration | `npx vitest run` | ✅ 291 passed, 10 skipped (18 files) |
+| E2E on PostgreSQL | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ 30 passed |
+| E2E on SQLite | `npx playwright test` | ✅ 30 passed |
 | All gates | `npm run verify` (add `-- --e2e` for the suite) | ✅ green |
 | Production build | `npm run build` | ✅ 36 routes |
 | Readiness probe | `GET /api/readiness` | ✅ 200 with provider warnings |
-| Fresh-database path | `db:migrate` → `seed` → e2e on an empty Postgres | ✅ 33 tables, 83 policies, 10 migrations, 29 e2e journeys |
+| Fresh-database path | `db:migrate` → `seed` → e2e on an empty Postgres | ✅ 36 tables, 83 policies, 11 migrations, 30 e2e journeys |
 | Provider behaviour | `npx vitest run tests/providers.test.ts` | ✅ 15 cases against a real HTTP double |
 
 ## Decisions worth not re-litigating

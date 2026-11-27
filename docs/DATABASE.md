@@ -88,6 +88,7 @@ All policies are keyed on the caller's organisation membership. It is defence in
 | 008 | local (Pakistani) payments: `local_payment_methods`, `local_payment_requests` |
 | 009 | gateway + refunds: `gateway_provider`/`gateway_payment_id`/`paid_at` on requests, `payment_refunds` |
 | 010 | email outbox: `email_outbox` (status, attempts, retry schedule, provider id) |
+| 011 | platform payments: `platform_settings`, `platform_payment_claims`, `founding_memberships` (locked price, seats, slots) |
 
 ## Plan catalogue
 

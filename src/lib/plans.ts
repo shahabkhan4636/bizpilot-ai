@@ -62,7 +62,19 @@ export function getEffectivePlan(organizationId: string): EffectivePlan {
     row ??
     get<PlanRow>("select * from plans where code = ?", [DEFAULT_PLAN_CODE]) ??
     ({} as PlanRow);
-  return { ...(plan as PlanRow), featuresParsed: safeParse<PlanFeatures>((plan as PlanRow).features, {}) };
+  const effective = { ...(plan as PlanRow), featuresParsed: safeParse<PlanFeatures>((plan as PlanRow).features, {}) };
+
+  // Founding Member: the price is locked in `founding_memberships`, and the seats
+  // that come with it were agreed in PHASE-0 (Starter limits, 3 members). Read from
+  // the table so the promise survives a plan-catalogue change.
+  const founding = get<{ member_limit: number }>(
+    "select member_limit from founding_memberships where organization_id = ?",
+    [organizationId]
+  );
+  if (founding && Number(founding.member_limit) > 0) {
+    effective.member_limit = Number(founding.member_limit);
+  }
+  return effective;
 }
 
 /** Only paid/trialing subscriptions unlock paid features. */

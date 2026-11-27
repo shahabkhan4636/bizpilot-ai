@@ -5,6 +5,72 @@ platform-owner build-out plan (`PHASE-0-SETUP.md`).
 
 ---
 
+## Phase 3 — platform payments & Founding Member (2026-08-09)
+
+**What changed**
+
+- New migration `011_platform_payments` (applied to all four databases: `data/bizpilot.db`,
+  `data/e2e.db`, Postgres `bizpilot`, Postgres `bizpilot_ci`): `platform_settings` (one row —
+  payout numbers, default method, instructions, `demo_mode`, Founding price/slots/seats),
+  `platform_payment_claims` (status, amount in paisa, method, transaction ID, `self_approved`,
+  `founding_member`) and `founding_memberships` (unique per workspace, `locked_price_cents`,
+  `member_limit`, `source auto|manual`).
+- `src/lib/platform-payments.ts` — pure rules: settings validation, which payout methods a
+  customer may see, slot counting, and `resolveClaimAmountCents` (a Founding Member is quoted
+  the **locked** price, everyone else the rupee conversion of the catalogue).
+- `src/lib/platform-payments-server.ts` — the transactional half: save settings (audited, and the
+  audit records *which* methods exist, not the numbers), submit a claim, approve/reject a claim,
+  grant/revoke a Founding membership, `quoteForClaim`.
+- **The amount is computed on the server.** A claim's price never comes from the form, so a
+  customer cannot edit what they owe.
+- **Founding Member = Starter limits + 3 seats, price locked forever.** Granted automatically when
+  a founding-priced claim is approved, or manually from the admin page. Renewals read
+  `founding_memberships.locked_price_cents`; `getEffectivePlan` applies the locked seat count, so a
+  later catalogue price change can never raise an existing member's price (there is a test for
+  exactly this).
+- **Slots are counted, never trusted:** `count(*) from founding_memberships`. Past the limit the
+  next customer is quoted the ordinary catalogue price.
+- **Self-approval is allowed and recorded** (`self_approved: true` in the claim row *and* the audit
+  metadata) — a one-person platform still has to be able to run its own product, but the trail
+  never pretends the approval was independent.
+- **`demo_mode`** auto-approves the platform owner's *own* claim (flagged, note `demo_mode
+  auto-approval`); customer claims still wait. Off by default.
+- New pages: `/admin/platform-payments` (payout settings, pending queue with approve/reject and a
+  reason the customer reads, Founding Member list, reviewed history) and `/billing/platform`
+  (a customer pays **BizPilot**). `/billing/local` — where a customer's own clients pay *them* — is
+  untouched; the two flows share nothing but `ensureSubscriptionPlan`.
+- `src/lib/payments/approve.ts`: the subscription write moved into exported
+  `ensureSubscriptionPlan`, now shared by the local and platform flows. Behaviour is unchanged and
+  locked by the new regression suite.
+- Confirmation after a review survives the re-render: it lands in the URL
+  (`?reviewed=approve|reject`) because `revalidatePath` drops the form's local state.
+
+**Why**
+
+Phase 3 is the part that turns the product into revenue: a Pakistani customer can send rupees to
+the owner's own wallet, the owner approves it in one click, and the workspace's plan changes
+immediately. The Founding Member offer needed a *database* price lock, not a promise in the copy —
+otherwise the first price increase silently breaks the offer.
+
+**Bugs found and fixed in this phase**
+
+1. `resolveClaimAmountCents` mixed rupees and paisa for non-founding claims (a Rs 2,800 plan would
+   have been stored as 2,800 paisa = Rs 28). Caught by the unit test, fixed by ×100 before storage.
+2. Approving from the admin queue gave no visible confirmation — `revalidatePath` re-rendered the
+   page and the form's `useActionState` message vanished. Found by the e2e test; fixed with a
+   redirect-based confirmation.
+
+**Test evidence**
+
+- `npx vitest run` → **291 passed / 10 skipped (301 tests, 18 files)** (was 241/10 before this phase;
+  +32 in `tests/platform-payments.test.ts`, +18 in `tests/local-payments-regression.test.ts`).
+- `npx playwright test` → **30 passed** on SQLite **and** **30 passed** on Postgres (new case:
+  "platform payments: owner configures payouts, a customer claims, the owner approves and the plan
+  activates").
+- `npm run verify` → typecheck, lint, unit tests, schema snapshot, build: **all gates green**.
+
+---
+
 ## Phase 1 — super-admin identity (2026-08-09)
 
 **What changed**

@@ -81,6 +81,7 @@ export default async function AdminPage() {
         description="Platform-wide view. Access is verified on the server for every request, not just hidden in the UI."
         actions={
           <div className="flex gap-2">
+            <Link href="/admin/platform-payments"><Button size="sm" variant="outline">Platform payments</Button></Link>
             <Link href="/admin/email"><Button size="sm" variant="outline">Email outbox</Button></Link>
             <Link href="/help"><Button size="sm" variant="outline">Operations guide</Button></Link>
           </div>

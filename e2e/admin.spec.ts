@@ -133,3 +133,53 @@ test("the email outbox is admin-only and queues instead of lying when Resend is 
 
   await ownerContext.close();
 });
+
+test("platform payments: owner configures payouts, a customer claims, the owner approves and the plan activates", async ({ browser }) => {
+  // 1. A stranger gets a 404 on the queue — same rule as every other /admin route.
+  const strangerContext = await browser.newContext();
+  const strangerPage = await strangerContext.newPage();
+  await ensureUser(strangerPage, stranger);
+  const blocked = await strangerPage.goto("/admin/platform-payments");
+  expect(blocked?.status()).toBe(404);
+  // ...and cannot see the platform's payout numbers anywhere.
+  const billingBlocked = await strangerPage.goto("/billing/platform");
+  expect(billingBlocked?.status()).toBe(200);
+
+  // 2. The owner configures where money should land. Nothing is hardcoded in the app.
+  const ownerContext = await browser.newContext();
+  const ownerPage = await ownerContext.newPage();
+  await ensureUser(ownerPage, owner);
+  const queue = await ownerPage.goto("/admin/platform-payments");
+  expect(queue?.status()).toBe(200);
+  await expect(ownerPage.getByRole("heading", { name: "Platform payments" })).toBeVisible({ timeout: 20_000 });
+
+  await ownerPage.getByLabel("Account holder name").fill("Shahab Khan");
+  await ownerPage.getByLabel("SadaPay number").fill("03001234567");
+  await ownerPage.getByRole("button", { name: /Save payout settings/i }).click();
+  await expect(ownerPage.getByText(/Payout settings saved/i)).toBeVisible({ timeout: 20_000 });
+
+  // 3. The customer now sees those numbers and submits a claim.
+  const reference = `E2E-${Date.now()}`;
+  await strangerPage.goto("/billing/platform");
+  await expect(strangerPage.getByText("03001234567")).toBeVisible({ timeout: 20_000 });
+  await strangerPage.getByLabel("Transaction ID").fill(reference);
+  await strangerPage.getByRole("button", { name: /Submit payment for approval/i }).click();
+  await strangerPage.waitForURL("**/billing**", { timeout: 30_000 });
+
+  // 4. The claim appears in the owner's queue with its transaction ID.
+  await ownerPage.goto("/admin/platform-payments");
+  await expect(ownerPage.getByText(reference)).toBeVisible({ timeout: 20_000 });
+  await ownerPage.getByRole("button", { name: /^Approve Rs/i }).first().click();
+  await ownerPage.waitForURL("**/admin/platform-payments?reviewed=approve", { timeout: 30_000 });
+  await expect(ownerPage.getByText(/Claim approved/i)).toBeVisible({ timeout: 20_000 });
+  await expect(ownerPage.getByText("Nothing waiting")).toBeVisible();
+
+  // 5. The customer's plan actually changed, and the Founding price was locked.
+  await strangerPage.goto("/billing/platform");
+  await expect(strangerPage.getByText(/Founding Member — your price is locked/i)).toBeVisible({ timeout: 20_000 });
+  await expect(strangerPage.getByText(reference).first()).toBeVisible();
+  await expect(strangerPage.getByText(/approved/i).first()).toBeVisible();
+
+  await strangerContext.close();
+  await ownerContext.close();
+});

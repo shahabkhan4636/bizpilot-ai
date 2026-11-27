@@ -62,21 +62,27 @@ Koi cheez "ho gaya" nahi likha jab tak wo chal kar test na hui ho.
 | **PKR-first launch copy** (Rs 8,200 / 22,200 / 41,800 / 83,800, SadaPay-first) | ✅ | `marketing/LAUNCH-KIT.md`, `docs/LAUNCH-RUNBOOK.md` |
 | **Email outbox** (`email_outbox`, retry 5 min → 30 min → 2 h, `/admin/email`, never burns a retry when the key is missing) | ✅ Phase 2 | `tests/email.test.ts` (14) · e2e "email outbox is admin-only…" |
 | **`RESEND_FROM_EMAIL`** respected for every transactional email | ✅ Phase 2 | `tests/email.test.ts` from-address cases |
+| **Platform payments** (customer → owner ka apna SadaPay/JazzCash/Easypaisa/IBAN; numbers DB mein, source mein kabhi nahi; approve karte hi plan activate) | ✅ Phase 3 | `tests/platform-payments.test.ts` (32) · e2e "platform payments: owner configures payouts…" |
+| **Founding Member offer** (Rs 1,500/mo, 10 slots, Starter limits + 3 seats, price `founding_memberships` mein lock — catalogue price barhne se purane member ka price nahi barhta) | ✅ Phase 3 | locked-price test · slot-exhaustion test · e2e friendly banner |
+| **Self-approval + `demo_mode`** (khud ki payment approve karna allowed, magar `self_approved` flag + audit; demo mode sirf owner ke apne claim pe) | ✅ Phase 3 | audit metadata assert · demo-mode tests |
+| **`/billing/local` regression lock** (shared `ensureSubscriptionPlan` refactor ke baad wahi behaviour) | ✅ Phase 3 | `tests/local-payments-regression.test.ts` (18) |
 | **Platform owner = `ADMIN_EMAIL`** (single rule in `src/lib/owner.ts`; `/admin` returns **404** to everyone else; unset variable ⇒ no admin at all) | ✅ Phase 1 | `tests/owner.test.ts` (6) · `e2e/admin.spec.ts` (3) |
 | **Transfer-note collision bug** (do workspaces ka note same ho sakta tha) | ✅ fix + test | 5,000 workspace pe zero collision test |
 | **Idempotent webhooks + amount mismatch guard** (Rs 1 se plan unlock nahi hota) | ✅ tested | e2e replay + mismatch tests |
 
 ## Jo **abhi bhi nahi** bana (missing features — jhoot nahi)
 
-1. **Public deploy nahi hua** — Supabase pooler string + GitHub connect chahiye (dono aap ke paas).
-2. **Koi bhi asli vendor call kabhi nahi hui** (Stripe/Resend/AI/Dropbox/SadaPay) — credentials nahi thay.
-3. **Gateway adapters live nahi** — merchant account (SadaBiz / JazzCash merchant / Easypaisa store) chahiye. Code + tests ready.
-4. **Multi-currency invoices / GST tax nahi** — sirf discount + tax percent maths hai.
-5. **Mobile app nahi** — sirf responsive web.
-6. **S3 / cloud storage backend nahi** — local disk ya Dropbox.
-7. **Redis-based rate limiting nahi** — DB-based (single instance ke liye theek).
-8. **White-label branding page nahi** (Agency plan mein feature flag hai, UI nahi).
-9. **Real-time updates nahi** (websockets) — page refresh pe data aata hai.
+1. **Platform payout numbers abhi khaali hain** — `/admin/platform-payments` pe aap ko khud
+   SadaPay number/IBAN type karna hai (ye jaan bujh kar source mein nahi hai).
+2. **Public deploy nahi hua** — Supabase pooler string + GitHub connect chahiye (dono aap ke paas).
+3. **Koi bhi asli vendor call kabhi nahi hui** (Stripe/Resend/AI/Dropbox/SadaPay) — credentials nahi thay.
+4. **Gateway adapters live nahi** — merchant account (SadaBiz / JazzCash merchant / Easypaisa store) chahiye. Code + tests ready.
+5. **Multi-currency invoices / GST tax nahi** — sirf discount + tax percent maths hai.
+6. **Mobile app nahi** — sirf responsive web.
+7. **S3 / cloud storage backend nahi** — local disk ya Dropbox.
+8. **Redis-based rate limiting nahi** — DB-based (single instance ke liye theek).
+9. **White-label branding page nahi** (Agency plan mein feature flag hai, UI nahi).
+10. **Real-time updates nahi** (websockets) — page refresh pe data aata hai.
 
 ---
 

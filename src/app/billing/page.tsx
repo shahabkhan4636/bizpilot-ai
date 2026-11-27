@@ -123,6 +123,19 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
             </Link>
           </CardContent>
         </Card>
+        <Card>
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+            <div>
+              <p className="font-medium">Pay BizPilot</p>
+              <p className="text-sm text-[hsl(var(--fg-muted))]">
+                Send your subscription fee to the platform owner and submit the transaction ID for approval.
+              </p>
+            </div>
+            <Link href="/billing/platform">
+              <Button size="sm" variant="outline">Pay BizPilot</Button>
+            </Link>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
