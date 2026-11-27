@@ -125,7 +125,56 @@ export function periodEndFrom(cycle: BillingCycle, from = new Date()): string {
   return end.toISOString();
 }
 
-/** What the customer is told to put in their transfer note, so reconciliation is possible. */
+/**
+ * FNV-1a, 32-bit, base-36 — a *disambiguator*, not a security control.
+ *
+ * Deliberately not `node:crypto`: this module is imported by client components, and
+ * a crypto import there would drag a server module into the browser bundle.
+ */
+function shortDigest(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(36).toUpperCase().padStart(4, "0").slice(0, 4);
+}
+
+/**
+ * What the customer is told to put in their transfer note, so reconciliation is
+ * possible.
+ *
+ * The slug is truncated *and* a digest of the full slug is appended, because two
+ * workspaces can share their first characters ("ali-store-1" / "ali-store-2").
+ * Truncating alone made two different customers' transfer notes identical — which
+ * in this workflow means money being matched to the wrong workspace. Uniqueness of
+ * the note matters more than it being pretty.
+ */
 export function paymentReference(workspaceSlug: string): string {
-  return `BP-${workspaceSlug.toUpperCase().slice(0, 10)}`;
+  const base = workspaceSlug.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) || "WORKSPACE";
+  return `BP-${base}-${shortDigest(workspaceSlug)}`;
+}
+
+/**
+ * Refund rules, kept pure so both the action and the tests use exactly one
+ * definition of "is this refund allowed".
+ *
+ * A refund can never exceed what was actually paid minus what has already gone
+ * back, because approving a refund twice is how a business pays a customer twice.
+ */
+export function validateRefund(input: { paidCents: number; alreadyRefundedCents: number; amountCents: number }): string | null {
+  if (!Number.isFinite(input.amountCents) || input.amountCents <= 0) {
+    return "Refund amount must be greater than zero.";
+  }
+  const remaining = input.paidCents - input.alreadyRefundedCents;
+  if (remaining <= 0) return "That payment has already been fully refunded.";
+  if (input.amountCents > remaining) {
+    return `Only Rs ${(remaining / 100).toLocaleString()} is left to refund on that payment.`;
+  }
+  return null;
+}
+
+/** True when nothing is left to refund — the point where access must stop. */
+export function isFullyRefunded(paidCents: number, refundedCents: number): boolean {
+  return paidCents > 0 && refundedCents >= paidCents;
 }

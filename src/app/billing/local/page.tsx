@@ -14,8 +14,10 @@ import {
   ReviewPaymentButtons,
   ToggleMethodButton,
   DeleteMethodButton,
+  RefundPaymentForm,
 } from "@/components/billing/local-payment-forms";
 import { listLocalPaymentData } from "@/lib/actions/local-payments";
+import { providerStatuses } from "@/lib/payments/registry";
 import { listPlans } from "@/lib/plans";
 import { formatDate } from "@/lib/utils";
 import {
@@ -37,7 +39,8 @@ const STATUS_TONE: Record<string, "brand" | "neutral" | "success" | "warning" | 
 
 export default async function LocalPaymentsPage() {
   const ctx = await loadAppContext();
-  const { methods, requests } = await listLocalPaymentData(ctx.orgId);
+  const { methods, requests, refunds } = await listLocalPaymentData(ctx.orgId);
+  const gateways = providerStatuses();
   const plans = listPlans();
   const canManage = ctx.can("billing:manage");
   const canConfigure = ctx.can("settings:workspace");
@@ -54,6 +57,10 @@ export default async function LocalPaymentsPage() {
   }
 
   const pending = requests.filter((r) => r.status === "pending");
+  const refundedByRequest = new Map<string, number>();
+  for (const refund of refunds) {
+    refundedByRequest.set(refund.request_id, (refundedByRequest.get(refund.request_id) ?? 0) + refund.amount_cents);
+  }
   const reference = paymentReference(ctx.membership.organization_slug ?? "workspace");
 
   return (
@@ -152,13 +159,51 @@ export default async function LocalPaymentsPage() {
                         <Badge tone={STATUS_TONE[r.status] ?? "neutral"}>{r.status}</Badge>
                         {r.review_note ? <p className="mt-1 text-xs text-[hsl(var(--fg-muted))]">{r.review_note}</p> : null}
                       </TD>
-                      <TD>{r.status === "pending" && canManage ? <ReviewPaymentButtons requestId={r.id} /> : null}</TD>
+                      <TD className="space-y-2">
+                        {r.status === "pending" && canManage ? <ReviewPaymentButtons requestId={r.id} /> : null}
+                        {r.gateway_provider ? (
+                          <p className="font-mono text-[11px] text-[hsl(var(--fg-muted))]">
+                            via {r.gateway_provider}:{r.gateway_payment_id}
+                          </p>
+                        ) : null}
+                        {r.status === "approved" && canManage && r.amount_cents - (refundedByRequest.get(r.id) ?? 0) > 0 ? (
+                          <RefundPaymentForm
+                            requestId={r.id}
+                            paidPkr={Math.round(r.amount_cents / 100)}
+                            remainingPkr={Math.round((r.amount_cents - (refundedByRequest.get(r.id) ?? 0)) / 100)}
+                          />
+                        ) : null}
+                        {refundedByRequest.has(r.id) ? (
+                          <Badge tone="warning">
+                            refunded Rs {((refundedByRequest.get(r.id) ?? 0) / 100).toLocaleString()}
+                          </Badge>
+                        ) : null}
+                      </TD>
                     </TR>
                   ))}
                 </TBody>
               </Table>
             )}
           </Card>
+
+          {refunds.length > 0 ? (
+            <Card className="overflow-hidden">
+              <CardHeader><CardTitle>Refunds</CardTitle></CardHeader>
+              <Table>
+                <THead><TR><TH>When</TH><TH>Payment</TH><TH className="text-right">Amount</TH><TH>Reason</TH></TR></THead>
+                <TBody>
+                  {refunds.map((rf) => (
+                    <TR key={rf.id}>
+                      <TD className="text-[hsl(var(--fg-muted))]">{formatDate(rf.created_at)}</TD>
+                      <TD className="font-mono text-xs">{rf.request_id.slice(0, 8)}</TD>
+                      <TD className="text-right tabular-nums">Rs {(rf.amount_cents / 100).toLocaleString()}</TD>
+                      <TD className="text-[hsl(var(--fg-muted))]">{rf.reason ?? "—"}</TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            </Card>
+          ) : null}
 
           {pending.length > 0 && canManage ? (
             <Alert tone="warning" title={`${pending.length} payment(s) waiting for approval`}>
@@ -199,6 +244,34 @@ export default async function LocalPaymentsPage() {
               </CardContent>
             </Card>
           ) : null}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Automatic verification</CardTitle>
+              <CardDescription>
+                With a merchant account, a signed webhook approves the payment for you. Until then this stays off.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {gateways.map((g) => (
+                <div key={g.name} className="flex items-center justify-between gap-2">
+                  <span className="font-medium capitalize">{g.name}</span>
+                  {g.configured ? (
+                    <Badge tone="success">webhooks live</Badge>
+                  ) : (
+                    <span className="text-xs text-[hsl(var(--fg-muted))]">
+                      needs {g.requiredEnv.join(", ")}
+                    </span>
+                  )}
+                </div>
+              ))}
+              <p className="text-xs text-[hsl(var(--fg-muted))]">
+                Webhook URL: <code>/api/payments/webhook/&lt;provider&gt;</code> — signature checked against the raw
+                body, every payment id stored once, and an amount that does not match the claim is never approved
+                automatically.
+              </p>
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader><CardTitle>Charging in rupees</CardTitle></CardHeader>

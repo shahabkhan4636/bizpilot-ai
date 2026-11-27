@@ -97,6 +97,7 @@ To get an admin panel, set `ADMIN_EMAIL` in `.env.local` **before** signing up w
 | `npm run db:migrate` | Apply pending migrations; `--status`, `--down N`, `--to ID`, `--baseline` |
 | `npm run db:schema` | Regenerate `sql/schema.sqlite.sql`; `--check` fails if it is stale |
 | `npm run db:migrate` also seeds the plan catalogue | required: `subscriptions.plan_code` references `plans(code)` |
+| `POST /api/payments/webhook/<provider>` | Signed wallet callback (sadapay / jazzcash / easypaisa) → approves the matching claim; 503 when unconfigured, 401 when unsigned |
 | `GET /api/cron/automations` | Scheduler entry point (`Authorization: Bearer $CRON_SECRET`); `?dryRun=1` reports without changing anything |
 | `GET /api/documents/[id]/download` | Signed-in download of one document, scoped to its workspace (404 for another workspace's id) |
 | `npm run db:backup` | Verified backup (`pg_dump` / `VACUUM INTO`) → gzipped file |
@@ -138,6 +139,9 @@ Names only — see `.env.example` for the full annotated list.
 | `ADMIN_EMAIL` | Which account becomes super-admin |
 | `LEAD_CAPTURE_KEY` | Enables the public lead capture endpoint |
 | `PKR_PER_USD` | Rupee price shown for the USD plan catalogue (default 280) |
+| `SADAPAY_WEBHOOK_SECRET` / `SADAPAY_SIGNATURE_HEADER` | Verified SadaPay webhooks → automatic plan activation |
+| `JAZZCASH_INTEGRITY_SALT` | Verified JazzCash `pp_SecureHash` callbacks |
+| `EASYPAISA_HASH_KEY` | Verified Easypaisa signed callbacks |
 | `BIZPILOT_DB_FILE` | Overrides the SQLite file path (tests use this) |
 
 Nothing is hardcoded: every secret is read from the environment at request time, and the UI reports the real

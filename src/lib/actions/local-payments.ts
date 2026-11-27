@@ -15,11 +15,13 @@ import {
   LOCAL_METHOD_LABEL,
   type BillingCycle,
   type LocalMethodKind,
-  periodEndFrom,
   validateLocalMethod,
   validatePaymentLink,
+  validateRefund,
+  isFullyRefunded,
 } from "@/lib/local-payments";
 import { BILLING_CYCLES } from "@/lib/local-payments";
+import { approveLocalPaymentRequest } from "@/lib/payments/approve";
 
 export type LocalPaymentState = { error?: string; notice?: string } | null;
 
@@ -252,52 +254,108 @@ export async function reviewLocalPaymentAction(form: FormData): Promise<void> {
     redirect("/billing/local");
   }
 
-  // Approval is conditional on the request still being pending, so two reviewers
-  // (or a double-click) cannot extend the subscription twice.
-  const changed = run(
-    `update local_payment_requests set status = 'approved', reviewed_by = ?, reviewed_at = ?, review_note = ?
-      where id = ? and organization_id = ? and status = 'pending'`,
-    [user.id, now, reviewNote, requestId, orgId]
-  );
-  if (changed.changes === 0) redirect("/billing/local");
-
-  const periodEnd = periodEndFrom(request.billing_cycle, new Date());
-  const existing = get<{ id: string }>("select id from subscriptions where organization_id = ?", [orgId]);
-  if (existing) {
-    run(
-      `update subscriptions set plan_code = ?, status = 'active', billing_cycle = ?, current_period_end = ?,
-              cancel_at_period_end = 0, trial_ends_at = null, updated_at = ?
-        where organization_id = ?`,
-      [request.plan_code, request.billing_cycle, periodEnd, now, orgId]
-    );
-  } else {
-    run(
-      `insert into subscriptions (id, organization_id, plan_code, status, billing_cycle, current_period_end, created_at, updated_at)
-       values (?,?,?,?,?,?,?,?)`,
-      [newId(), orgId, request.plan_code, "active", request.billing_cycle, periodEnd, now, now]
-    );
-  }
-
-  audit({
-    organizationId: orgId, actorId: user.id, action: "local_payment.approved", targetType: "local_payment_request",
-    targetId: requestId, metadata: { planCode: request.plan_code, cycle: request.billing_cycle, amountCents: request.amount_cents, reference: request.reference },
+  // The approval itself lives in `approveLocalPaymentRequest`, shared with the
+  // gateway webhook, so a manual approval and an automatic one can never disagree
+  // about what activating a plan means.
+  const result = approveLocalPaymentRequest({
+    organizationId: orgId,
+    requestId,
+    actorId: user.id,
+    note: reviewNote,
   });
-  logActivity({
-    organizationId: orgId, actorId: user.id, entityType: "organization", entityId: orgId,
-    action: "local_payment.approved",
-    summary: `Payment approved — ${request.plan_code} (${request.billing_cycle}) active until ${periodEnd.slice(0, 10)}`,
-  });
-  notify({
-    organizationId: orgId, type: "system", level: "success",
-    title: `Plan activated: ${request.plan_code}`,
-    body: `Your payment was approved. The plan runs until ${periodEnd.slice(0, 10)}.`,
-    href: "/billing",
-  });
+  if (!result.ok) redirect("/billing/local");
 
   revalidatePath("/billing");
   revalidatePath("/billing/local");
   revalidatePath("/notifications");
   redirect("/billing/local");
+}
+
+/**
+ * Records money going back to the customer.
+ *
+ * A refund is not a status edit: it is its own row with an amount, a reason and an
+ * author, because "we took Rs 22,200 and gave Rs 22,200 back" has to be answerable
+ * months later. Partial refunds are allowed; the total can never exceed what was
+ * paid. Once the claim is fully refunded the subscription is cancelled, so access
+ * does not outlive the money.
+ */
+export async function refundLocalPaymentAction(_prev: LocalPaymentState, form: FormData): Promise<LocalPaymentState> {
+  try {
+    await requirePermission("billing:manage");
+    const { user, membership } = await requireAuth();
+    const orgId = membership.organization_id;
+
+    const requestId = str(form.get("request_id"), "Payment", { required: true, max: 60 });
+    const reason = optionalStr(form.get("refund_reason"), 300) || null;
+    const amountCents = money(form.get("refund_pkr"), "Refund amount");
+
+    const request = get<{ id: string; status: string; amount_cents: number }>(
+      "select id, status, amount_cents from local_payment_requests where id = ? and organization_id = ?",
+      [requestId, orgId]
+    );
+    if (!request) throw new ValidationError("That payment does not belong to this workspace.");
+    if (request.status !== "approved") throw new ValidationError("Only an approved payment can be refunded.");
+
+    const refunded = get<{ total: number | null }>(
+      "select sum(amount_cents) as total from payment_refunds where request_id = ? and organization_id = ?",
+      [requestId, orgId]
+    );
+    const alreadyRefunded = Number(refunded?.total ?? 0);
+    const problem = validateRefund({
+      paidCents: request.amount_cents,
+      alreadyRefundedCents: alreadyRefunded,
+      amountCents,
+    });
+    if (problem) throw new ValidationError(problem);
+
+    const now = nowIso();
+    run(
+      `insert into payment_refunds (id, organization_id, request_id, amount_cents, currency, reason, created_by, created_at)
+       values (?,?,?,?,?,?,?,?)`,
+      [newId(), orgId, requestId, amountCents, "PKR", reason, user.id, now]
+    );
+
+    const fullyRefunded = isFullyRefunded(request.amount_cents, alreadyRefunded + amountCents);
+    if (fullyRefunded) {
+      run(
+        `update subscriptions set status = 'canceled', cancel_at_period_end = 0, current_period_end = ?, updated_at = ?
+          where organization_id = ?`,
+        [now, now, orgId]
+      );
+    }
+
+    audit({
+      organizationId: orgId,
+      actorId: user.id,
+      action: "local_payment.refunded",
+      targetType: "local_payment_request",
+      targetId: requestId,
+      metadata: { amountCents, fullyRefunded, reason },
+    });
+    logActivity({
+      organizationId: orgId,
+      actorId: user.id,
+      entityType: "organization",
+      entityId: orgId,
+      action: "local_payment.refunded",
+      summary: `Refund recorded: Rs ${(amountCents / 100).toLocaleString()}${fullyRefunded ? " (payment fully refunded, plan cancelled)" : " (partial)"}`,
+    });
+    notify({
+      organizationId: orgId,
+      type: "system",
+      level: "warning",
+      title: "Refund recorded",
+      body: `Rs ${(amountCents / 100).toLocaleString()} was refunded.${fullyRefunded ? " The plan has been cancelled." : ""}`,
+      href: "/billing/local",
+    });
+
+    revalidatePath("/billing/local");
+    revalidatePath("/billing");
+    return { notice: `Refund of Rs ${(amountCents / 100).toLocaleString()} recorded.` };
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 /** Numbers shown on the page; kept here so the page does not build its own SQL. */
@@ -307,10 +365,14 @@ export async function listLocalPaymentData(orgId: string) {
       "select id, kind, label, account_title, account_number, payment_link, instructions, is_active from local_payment_methods where organization_id = ? order by created_at",
       [orgId]
     ),
-    requests: all<{ id: string; plan_code: string; billing_cycle: string; amount_cents: number; currency: string; reference: string | null; payer_note: string | null; status: string; submitted_at: string; reviewed_at: string | null; review_note: string | null }>(
+    requests: all<{ id: string; plan_code: string; billing_cycle: string; amount_cents: number; currency: string; reference: string | null; payer_note: string | null; status: string; submitted_at: string; reviewed_at: string | null; review_note: string | null; gateway_provider: string | null; gateway_payment_id: string | null; paid_at: string | null }>(
       `select id, plan_code, billing_cycle, amount_cents, currency, reference, payer_note, status,
-              submitted_at, reviewed_at, review_note
+              submitted_at, reviewed_at, review_note, gateway_provider, gateway_payment_id, paid_at
          from local_payment_requests where organization_id = ? order by submitted_at desc limit 25`,
+      [orgId]
+    ),
+    refunds: all<{ id: string; request_id: string; amount_cents: number; reason: string | null; created_at: string }>(
+      "select id, request_id, amount_cents, reason, created_at from payment_refunds where organization_id = ? order by created_at desc limit 25",
       [orgId]
     ),
   };

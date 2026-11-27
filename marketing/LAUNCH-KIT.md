@@ -1,7 +1,18 @@
 # Launch kit — words you can paste today
 
-Everything here is written to be sent/copied, not admired. Prices come from the seeded plan catalogue:
-**Starter $29 · Professional $79 · Business $149 · Agency $299 per month**, 14-day trial, no card.
+Everything here is written to be sent/copied, not admired. Prices come from the seeded plan catalogue,
+quoted in rupees for a Pakistani customer at **1 USD = 280 PKR** (`PKR_PER_USD`):
+
+| Plan | Rupees / month | Rupees / year | USD (reference) |
+| --- | --- | --- | --- |
+| Starter | **Rs 8,200** | Rs 81,200 | $29 |
+| Professional | **Rs 22,200** | Rs 221,200 | $79 |
+| Business | **Rs 41,800** | Rs 417,200 | $149 |
+| Agency | **Rs 83,800** | Rs 837,200 | $299 |
+
+14-day trial, no card. **Payment is received into your own SadaPay / JazzCash / EasyPaisa / bank
+account** — the customer transfers, the owner approves inside the app (`/billing/local`). Stripe is not
+available to Pakistani businesses, so do not promise card checkout to anyone.
 
 ---
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { BadgeCheck, Banknote, Save, Trash2 } from "lucide-react";
+import { BadgeCheck, Banknote, RotateCcw, Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import {
   toggleLocalMethodAction,
   deleteLocalMethodAction,
   reviewLocalPaymentAction,
+  refundLocalPaymentAction,
   type LocalPaymentState,
 } from "@/lib/actions/local-payments";
 import { LOCAL_METHOD_HINT, LOCAL_METHOD_KINDS, LOCAL_METHOD_LABEL, type LocalMethodKind } from "@/lib/local-payments";
@@ -182,5 +183,61 @@ export function ReviewPaymentButtons({ requestId }: { requestId: string }) {
         <Button type="submit" size="sm" variant="outline">Not received</Button>
       </form>
     </div>
+  );
+}
+
+/**
+ * Owner/admin: record money going back to the customer.
+ *
+ * Deliberately a form and not a one-click button: a refund without an amount and a
+ * reason is unreviewable six months later, and "who gave this back and why" is the
+ * first question anyone asks.
+ */
+export function RefundPaymentForm({ requestId, paidPkr, remainingPkr }: { requestId: string; paidPkr: number; remainingPkr: number }) {
+  const [state, action, pending] = useActionState(refundLocalPaymentAction, null as LocalPaymentState);
+  const [open, setOpen] = useState(false);
+
+  if (!open) {
+    return (
+      <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
+        <RotateCcw className="h-4 w-4" /> Refund
+      </Button>
+    );
+  }
+
+  return (
+    <form action={action} className="space-y-2">
+      <input type="hidden" name="request_id" value={requestId} />
+      {state?.error ? <Alert tone="danger" title="Not refunded">{state.error}</Alert> : null}
+      {state?.notice ? <Alert tone="success">{state.notice}</Alert> : null}
+      <div className="space-y-1">
+        <Label htmlFor={`refund_pkr_${requestId}`}>Refund amount (PKR)</Label>
+        <Input
+          id={`refund_pkr_${requestId}`}
+          name="refund_pkr"
+          type="number"
+          min={1}
+          step="0.01"
+          defaultValue={remainingPkr}
+          required
+        />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor={`refund_reason_${requestId}`}>Reason</Label>
+        <Input
+          id={`refund_reason_${requestId}`}
+          name="refund_reason"
+          placeholder={`Paid Rs ${paidPkr.toLocaleString()} — why is it going back?`}
+        />
+      </div>
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" variant="danger" disabled={pending}>
+          {pending ? "Recording…" : "Record refund"}
+        </Button>
+        <Button type="button" size="sm" variant="outline" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }

@@ -40,6 +40,9 @@ export default defineConfig({
       SIGNUP_RATE_LIMIT: "1000",
       LOGIN_RATE_LIMIT: "1000",
       NEXT_PUBLIC_APP_URL: `http://127.0.0.1:${PORT}`,
+      // A test-only gateway secret so the real webhook route can be exercised end
+      // to end (signature → approval → plan). Production uses the real merchant one.
+      SADAPAY_WEBHOOK_SECRET: "e2e_sadapay_webhook_secret",
     },
   },
 });

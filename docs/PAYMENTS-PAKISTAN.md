@@ -82,3 +82,74 @@ approval flow.
   gives 10-months-for-12) closes cash-flow faster.
 - Keep the **transfer note** (`BP-<workspace>`) in the customer's message: that string is how you match a
   transfer to a workspace when three payments land on the same day.
+
+---
+
+## Automatic verification (built, waiting on a merchant account)
+
+The manual approval flow above needs no third party. This section is what runs the
+*moment* a merchant account exists — the code is written, tested and deployed with
+everything else, and switches on when its secret appears in the environment.
+
+### Endpoints
+
+```
+POST /api/payments/webhook/sadapay
+POST /api/payments/webhook/jazzcash
+POST /api/payments/webhook/easypaisa
+```
+
+Point the gateway's dashboard at one of those URLs. Without the matching secret the
+route answers **503** (and says which variable is missing) instead of trusting the
+request. With the secret, an unsigned or wrongly-signed body is **401** and changes
+nothing.
+
+### Environment
+
+| Variable | Provider | What it is |
+| --- | --- | --- |
+| `SADAPAY_WEBHOOK_SECRET` | SadaPay / SADA BIZ | HMAC-SHA256 key over the raw request body |
+| `SADAPAY_SIGNATURE_HEADER` | SadaPay | Header carrying the signature (default `x-sadapay-signature`) |
+| `JAZZCASH_INTEGRITY_SALT` | JazzCash | Integrity salt from the merchant portal; `pp_SecureHash` is verified over the key-sorted fields |
+| `EASYPAISA_HASH_KEY` | Easypaisa | Hash key for the signed callback parameters |
+
+The SadaPay header name and its field names are the only assumptions in this code —
+the merchant dashboard has not been issued yet, so one real callback settles them.
+Everything else (the signature maths, the amount units, idempotency, the approval
+path) is exercised by tests today.
+
+### What a verified payment does
+
+1. **Signature checked over the raw body** in constant time. A JSON re-serialise would
+   change the bytes, so the raw text is what gets hashed.
+2. **Idempotency by the provider's own payment id** (`webhook_events`, unique on
+   provider + external id). A replay is acknowledged and does nothing twice.
+3. **The transfer note finds the workspace** (`BP-<SLUG>-<DIGEST>`). The note now
+   carries a digest of the full slug: truncating the slug alone made two customers'
+   notes identical, which is how money gets matched to the wrong workspace. If a note
+   ever matches more than one workspace, the webhook refuses to guess.
+4. **Amount must match the claim.** Rs 1 arriving against a Rs 22,200 claim is
+   recorded as `local_payment.amount_mismatch`, notified to the owner, and **not**
+   approved. Automation that unlocks a plan on the wrong amount is a bug, not a
+   feature.
+5. **Approval reuses `approveLocalPaymentRequest`** — the same function the manual
+   button calls. Audit row names the gateway and payment id; `actor_id` is null
+   because no human approved it.
+6. **Failed/declined payments are recorded but never close the claim**, so the
+   customer can try again with a real payment.
+
+### Refunds
+
+`payment_refunds` records money going back: amount, reason, author, timestamp.
+Partial refunds are allowed; the total can never exceed what was paid
+(`validateRefund`). When a payment is fully refunded the subscription is set to
+`canceled`, so access does not outlive the money. The same limit is enforced in the
+UI, in the action, and in the pure rule function — three places, one definition, so
+a UI bug cannot refund twice.
+
+### What is still genuinely blocked
+
+A merchant account: **SadaBiz** (CNIC + business documents), **JazzCash merchant**
+(merchant ID + password + integrity salt), **Easypaisa merchant** (store ID), or an
+aggregator (**Safepay**, **PayFast**, **bSecure**). Until then the manual flow is
+the one that takes money, and it works today.

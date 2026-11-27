@@ -74,7 +74,7 @@ All policies are keyed on the caller's organisation membership. It is defence in
 - the SQLite variant of 005 is a documented no-op (SQLite has no policies; isolation there is the
   query layer, asserted by the test suite).
 
-## Migrations 001–006 at a glance
+## Migrations 001–009 at a glance
 
 | # | What it does |
 | --- | --- |
@@ -85,6 +85,8 @@ All policies are keyed on the caller's organisation membership. It is defence in
 | 005 | row-level security (generated from `sql/rls.postgres.sql`) |
 | 006 | scheduled automations (`schedule_interval_minutes`, `next_run_at`) + `integration_credentials` |
 | 007 | proposal responses: `accepted_by_name`, `rejected_reason` (who signed, and why not) |
+| 008 | local (Pakistani) payments: `local_payment_methods`, `local_payment_requests` |
+| 009 | gateway + refunds: `gateway_provider`/`gateway_payment_id`/`paid_at` on requests, `payment_refunds` |
 
 ## Plan catalogue
 

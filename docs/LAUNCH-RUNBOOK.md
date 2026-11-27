@@ -9,6 +9,23 @@ remaining order of operations, and nothing here is skippable.
 
 ---
 
+## Pricing you will actually charge (rupees, not dollars)
+
+The plan catalogue is priced in USD and quoted in PKR at `PKR_PER_USD` (default 280,
+rounded up to the next Rs 100):
+
+| Plan | Rs / month | Rs / year |
+| --- | --- | --- |
+| Starter | 8,200 | 81,200 |
+| Professional | 22,200 | 221,200 |
+| Business | 41,800 | 417,200 |
+| Agency | 83,800 | 837,200 |
+
+Money is received in your **own** SadaPay / JazzCash / EasyPaisa / bank account
+(`/billing/local`), because Stripe does not onboard Pakistani businesses. Set
+`PKR_PER_USD` to the rate you actually want to charge — a stale hardcoded rate is how
+a business quietly loses money on every sale.
+
 ## 0. The three things that must be true before you can charge a customer
 
 | # | Requirement | Why it is not optional | Who does it |

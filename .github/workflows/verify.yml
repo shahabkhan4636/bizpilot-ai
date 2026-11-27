@@ -1,0 +1,75 @@
+name: verify
+
+# The gates that `npm run verify` runs locally, run again on every push. Until now
+# "all green" was a claim about one machine; this makes it a claim about the commit.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx eslint .
+
+      - name: Unit + integration tests
+        run: npx vitest run
+
+      - name: Schema snapshot is in sync with the migrations
+        run: node scripts/build-schema.mjs --check
+
+      - name: Production build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: bizpilot_owner
+          POSTGRES_PASSWORD: bizpilot
+          POSTGRES_DB: bizpilot_ci
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgres://bizpilot_owner:bizpilot@127.0.0.1:5433/bizpilot_ci
+      BIZPILOT_ENGINE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Migrate the real Postgres
+        run: node scripts/db-migrate.mjs
+      - name: Same test suite, Postgres engine
+        run: npx vitest run
+      - name: End-to-end journeys against Postgres
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: test-results/
+          retention-days: 7

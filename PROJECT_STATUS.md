@@ -2,6 +2,12 @@
 
 _Last updated: 2026-08-09 · branch `main` · this file is the continuity record: read it first._
 
+**Newest work:** real wallet-gateway adapters (SadaPay / JazzCash / Easypaisa) behind
+`/api/payments/webhook/<provider>` with signature verification, idempotency and
+amount matching; refunds with `payment_refunds`; CI (`verify.yml`, `backup.yml`);
+PKR-first marketing copy. Migration **009** applied to SQLite, both local Postgres
+databases and Supabase production (32 tables).
+
 ## Where the project stands
 
 A multi-tenant SaaS (Next.js 15 App Router, TypeScript strict, PostgreSQL 17 primary with SQLite as
@@ -15,13 +21,13 @@ asserted — the verification commands and their real output are in `PHASE-3-REP
 | --- | --- | --- |
 | Types | `npx tsc --noEmit` | ✅ clean, strict, 0 `any` |
 | Lint | `npx eslint .` | ✅ 0 errors / 0 warnings |
-| Unit + integration | `npx vitest run` | ✅ 185 passed, 10 skipped (13 files) |
-| E2E on PostgreSQL | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ 24 passed |
-| E2E on SQLite | `npx playwright test` | ✅ 24 passed |
+| Unit + integration | `npx vitest run` | ✅ 221 passed, 10 skipped (13 files) |
+| E2E on PostgreSQL | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ 25 passed |
+| E2E on SQLite | `npx playwright test` | ✅ 25 passed |
 | All gates | `npm run verify` (add `-- --e2e` for the suite) | ✅ green |
 | Production build | `npm run build` | ✅ 36 routes |
 | Readiness probe | `GET /api/readiness` | ✅ 200 with provider warnings |
-| Fresh-database path | `db:migrate` → `seed` → e2e on an empty Postgres | ✅ 30 tables, 83 policies, 8 migrations, 24 e2e journeys |
+| Fresh-database path | `db:migrate` → `seed` → e2e on an empty Postgres | ✅ 32 tables, 83 policies, 9 migrations, 25 e2e journeys |
 | Provider behaviour | `npx vitest run tests/providers.test.ts` | ✅ 15 cases against a real HTTP double |
 
 ## Decisions worth not re-litigating

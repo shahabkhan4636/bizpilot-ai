@@ -1,9 +1,12 @@
+import { createHmac } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 
 const PG_URL = process.env.DATABASE_URL ?? "";
+/** Test-only webhook secret; the same value is handed to the server in playwright.config.ts. */
+const E2E_WEBHOOK_SECRET = "e2e_sadapay_webhook_secret";
 const DB = path.join(process.cwd(), "data", "e2e.db");
 
 /**
@@ -842,6 +845,84 @@ test("SadaPay local payment: configure, submit, approve, and the plan really upg
   await expect(page.getByText(/Plan activated/i).first()).toBeVisible({ timeout: 15_000 });
   await page.goto("/dashboard");
   await expect(page.getByText(/Payment approved/i).first()).toBeVisible({ timeout: 15_000 });
+
+  // 10. A full refund is recorded with an amount and a reason, and it does not
+  //     leave the paid plan switched on.
+  await page.goto("/billing/local");
+  await page.getByRole("button", { name: "Refund" }).first().click();
+  await page.getByLabel("Refund amount (PKR)").fill("22200");
+  await page.getByLabel("Reason").fill("Customer changed their mind");
+  await page.getByRole("button", { name: "Record refund" }).click();
+  // Assert the durable outcome, not the toast: once the payment is fully refunded
+  // the refund form is gone from that row, so its success message goes with it.
+  await expect(page.getByText(/refunded Rs 22,200/i).first()).toBeVisible({ timeout: 30_000 });
+  await page.reload();
+  await expect(page.getByText(/refunded Rs 22,200/i).first()).toBeVisible();
+  await expect(page.getByText("Customer changed their mind").first()).toBeVisible();
+  // Nothing is left to refund, so the control is gone rather than failing later.
+  await expect(page.getByRole("button", { name: "Refund" })).toHaveCount(0);
+
+  await page.goto("/notifications");
+  await expect(page.getByText(/Refund recorded/i).first()).toBeVisible({ timeout: 15_000 });
+
+  await context.close();
+});
+
+test("a signed SadaPay webhook approves the claim on its own, and a replay does nothing", async ({ browser, request }) => {
+  const owner = { ...userA, email: `hook.${stamp}@vertex.example` };
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await signup(page, owner);
+
+  // Owner stores their wallet, then a customer claim goes in and stays pending.
+  await page.goto("/billing/local");
+  await page.getByLabel("Method").selectOption("sadapay");
+  await page.getByLabel("Account title *").fill("Hook Owner");
+  await page.getByLabel("Account / wallet number *").fill("03009998877");
+  await page.getByRole("button", { name: "Add payment method" }).click();
+  await expect(page.getByText(/SadaPay details saved/)).toBeVisible({ timeout: 30_000 });
+  await page.reload();
+
+  await page.getByLabel("Plan").selectOption("professional");
+  await page.getByLabel("Amount sent (Rs) *").fill("22200");
+  await page.getByLabel("Transaction ID / reference *").fill(`SP-${stamp}-hook`);
+  await page.getByRole("button", { name: "I have sent this payment" }).click();
+  await expect(page.getByText(/Payment submitted/)).toBeVisible({ timeout: 30_000 });
+
+  // The transfer note the customer is told to type is what the gateway echoes back.
+  await page.reload();
+  const referenceText = await page.getByText(/^BP-[A-Z0-9-]+$/).first().innerText();
+  const reference = referenceText.trim();
+
+  // An unsigned request is refused: nothing becomes accessible for free.
+  const unsigned = await request.post("/api/payments/webhook/sadapay", {
+    data: { payment_id: `pay-${stamp}-bad`, status: "paid", amount: "22200", reference },
+  });
+  expect(unsigned.status()).toBe(401);
+
+  // A correctly signed payment is approved by the same code path the button uses.
+  const body = JSON.stringify({ payment_id: `pay-${stamp}`, status: "paid", amount: "22200", reference });
+  const signature = createHmac("sha256", E2E_WEBHOOK_SECRET).update(body).digest("hex");
+  const signed = await request.post("/api/payments/webhook/sadapay", {
+    data: body,
+    headers: { "content-type": "application/json", "x-sadapay-signature": signature },
+  });
+  expect(signed.status()).toBe(200);
+  expect(await signed.json()).toMatchObject({ action: "approved" });
+
+  // The workspace really upgraded, with no human clicking approve.
+  await page.goto("/billing");
+  await expect(page.getByText("Professional").first()).toBeVisible({ timeout: 15_000 });
+  await page.goto("/billing/local");
+  await expect(page.getByText(/via sadapay:/).first()).toBeVisible();
+  await expect(page.getByText("approved").first()).toBeVisible();
+
+  // Replaying the same webhook is acknowledged and changes nothing.
+  const replay = await request.post("/api/payments/webhook/sadapay", {
+    data: body,
+    headers: { "content-type": "application/json", "x-sadapay-signature": signature },
+  });
+  expect(await replay.json()).toMatchObject({ duplicate: true });
 
   await context.close();
 });

@@ -154,3 +154,26 @@ npm run dev                 # http://localhost:3000
 ```
 Postgres instead: set `DATABASE_URL` (+ `BIZPILOT_ENGINE=postgres`), `npm run db:migrate`, `npm run db:seed:pg`.
 Check the deployment's honesty at any time: `curl -s localhost:3000/api/readiness | jq`.
+
+---
+
+## Newest round (gateway + refunds + CI)
+
+- **Migration 009** `009_payment_gateway_and_refunds` — applied to SQLite (dev + e2e), both
+  local Postgres databases, and Supabase production (`32 tables`, migration rows 001–004,
+  006–009; 005 deliberately skipped).
+- **`src/lib/payments/`** — `provider.ts` (pure helpers), `sadapay.ts`, `jazzcash.ts`,
+  `easypaisa.ts` (signature verification), `registry.ts` (which provider is live),
+  `approve.ts` (the single approval path shared by the button and the webhook).
+- **`POST /api/payments/webhook/<provider>`** — 404 unknown / 503 unconfigured / 401 bad
+  signature / 413 oversized; `webhook_events` idempotency; amount mismatch never approves;
+  ambiguous transfer note never guesses.
+- **Refunds** — `payment_refunds` + `refundLocalPaymentAction` + UI; full refund cancels access.
+- **Transfer-note fix** — `paymentReference` now `BP-<slug8>-<digest4>`; truncation alone let
+  two workspaces share a note (money matched to the wrong one). Ambiguity is refused.
+- **CI** — `.github/workflows/verify.yml`, `.github/workflows/backup.yml`.
+- **Gates at this commit:** `npm run verify` green · `npx vitest run` **221 passed / 10 skipped**
+  · Playwright **25/25 SQLite** and **25/25 PostgreSQL**.
+- **Still blocked (needs you):** Supabase Session-pooler `DATABASE_URL`, GitHub connection for the
+  Vercel deploy, Vercel Pro (commercial use + sub-daily cron), and merchant accounts for live
+  gateway verification (SadaBiz / JazzCash merchant / Easypaisa store / Safepay).

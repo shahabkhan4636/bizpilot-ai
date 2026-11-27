@@ -6,14 +6,16 @@ Koi cheez "ho gaya" nahi likha jab tak wo chal kar test na hui ho.
 | | |
 | --- | --- |
 | Report date | 2026-08-09 |
-| Code commit | `7ca0392` (git `main`) |
-| Code size | ~14,900 lines TypeScript/TSX · 34 library modules · 15 server-action modules · 29 components |
-| Routes | **34 pages** + **10 API endpoints** |
-| Database | 8 migrations · 30 tables · Postgres 17.12 (Supabase: live) + SQLite (local) |
-| Tests | **185 unit/integration** (10 skipped by design) + **24 end-to-end journeys** |
-| E2E engines | SQLite **24/24** ✅ · PostgreSQL **24/24** ✅ |
-| Deployment | Vercel project created & configured — **code abhi deploy nahi hua** |
-| Live revenue | **$0** — website live nahi hai, is liye koi payment possible nahi |
+| Code commit | latest on `main` (see `git log -1`) |
+| Code size | ~17,500 lines TypeScript/TSX · 38 library modules · 15 server-action modules · 30 components |
+| Routes | **34 pages** + **11 API endpoints** (incl. `POST /api/payments/webhook/<provider>`) |
+| Database | **9 migrations** · **32 tables** · Postgres 17.12 (Supabase: live) + SQLite (local) |
+| Tests | **221 unit/integration** (10 skipped by design) + **25 end-to-end journeys** |
+| E2E engines | SQLite **25/25** ✅ · PostgreSQL **25/25** ✅ |
+| CI | `.github/workflows/verify.yml` (gates + Postgres job) · `backup.yml` (daily dump) |
+| Deployment | Vercel project configured — **code abhi deploy nahi hua** |
+| Live preview | `next start` chalta hua: `/`, `/login`, `/pricing`, `/billing/local` sab 200 |
+| Live revenue | **$0** — public website live nahi hai |
 
 ---
 
@@ -49,20 +51,29 @@ Koi cheez "ho gaya" nahi likha jab tak wo chal kar test na hui ho.
 | Scheduled automations | Endpoint + `CRON_SECRET` + dry-run + idempotent claim | Vercel **Pro** (Hobby cron sirf din mein 1 baar) |
 | Automatic wallet verification (SadaPay/JazzCash/EasyPaisa API) | Plug-in point documented | **merchant account** (SadaBiz / JazzCash merchant / EasyPaisa store) |
 
-## Jo **abhi nahi** bana (missing features — jhoot nahi)
+## Jo ab naya complete hua (is round mein)
 
-1. **Website live nahi hai** (deploy pending) — sab se bara missing item.
-2. **Koi bhi asli vendor call kabhi nahi hui** (Stripe/Resend/AI/Dropbox) — credentials nahi thay.
-3. **Automatic payment verification nahi hai** — local payments manual approval se chalti hain.
-4. **Multi-currency invoices / tax (GST) nahi** — sirf discount + tax percent maths hai.
+| Kaam | Status | Proof |
+| --- | --- | --- |
+| **Automatic payment verification** (SadaPay / JazzCash / Easypaisa webhooks) | ✅ built + tested | `tests/gateway.test.ts` (36) · e2e "a signed SadaPay webhook approves the claim on its own" |
+| **Refunds / credit note** (amount + reason + author, full refund cancels access) | ✅ built + tested | e2e refund journey · `validateRefund` unit tests |
+| **CI pipeline** (types, lint, tests, schema, build + real Postgres job + e2e) | ✅ commit shuda | `.github/workflows/verify.yml` |
+| **Scheduled backups** (daily `pg_dump` → artifact, 30 din) | ✅ commit shuda | `.github/workflows/backup.yml` |
+| **PKR-first launch copy** (Rs 8,200 / 22,200 / 41,800 / 83,800, SadaPay-first) | ✅ | `marketing/LAUNCH-KIT.md`, `docs/LAUNCH-RUNBOOK.md` |
+| **Transfer-note collision bug** (do workspaces ka note same ho sakta tha) | ✅ fix + test | 5,000 workspace pe zero collision test |
+| **Idempotent webhooks + amount mismatch guard** (Rs 1 se plan unlock nahi hota) | ✅ tested | e2e replay + mismatch tests |
+
+## Jo **abhi bhi nahi** bana (missing features — jhoot nahi)
+
+1. **Public deploy nahi hua** — Supabase pooler string + GitHub connect chahiye (dono aap ke paas).
+2. **Koi bhi asli vendor call kabhi nahi hui** (Stripe/Resend/AI/Dropbox/SadaPay) — credentials nahi thay.
+3. **Gateway adapters live nahi** — merchant account (SadaBiz / JazzCash merchant / Easypaisa store) chahiye. Code + tests ready.
+4. **Multi-currency invoices / GST tax nahi** — sirf discount + tax percent maths hai.
 5. **Mobile app nahi** — sirf responsive web.
 6. **S3 / cloud storage backend nahi** — local disk ya Dropbox.
 7. **Redis-based rate limiting nahi** — DB-based (single instance ke liye theek).
-8. **CI pipeline (GitHub Actions) commit nahi hai** — `npm run verify` manual hai.
-9. **Scheduled backups nahi** — script hai, chalane wala koi nahi.
-10. **Refund / credit-note flow nahi** — approve/reject hai, refund manual hai.
-11. **White-label branding page nahi** (Agency plan mein feature flag hai, UI nahi).
-12. **Real-time updates nahi** (websockets) — page refresh pe data aata hai.
+8. **White-label branding page nahi** (Agency plan mein feature flag hai, UI nahi).
+9. **Real-time updates nahi** (websockets) — page refresh pe data aata hai.
 
 ---
 
@@ -96,6 +107,8 @@ Har row ka proof ya test ka naam hai — aap khud chala kar dekh sakte hain.
 | 22 | Documents **download** (scoped, audited, 404 cross-tenant) | ✅ | `e2e`: "documents can be downloaded back byte-for-byte" |
 | 23 | Dropbox storage (OAuth, refresh, upload, download, disconnect) | ⚠️ blocked | `tests/integrations.test.ts` (13) against real HTTP double |
 | 24 | **Local payments: SadaPay/JazzCash/EasyPaisa/bank** | ✅ | `e2e`: "SadaPay local payment: configure, submit, approve…", `tests/hardening.test.ts` (+6) |
+| 24b | **Gateway webhooks (SadaPay/JazzCash/Easypaisa): signature, idempotency, amount match** | ✅ built (keys nahi) | `tests/gateway.test.ts` (36), e2e: "a signed SadaPay webhook approves the claim on its own" |
+| 24c | **Refunds (partial/full, full = access band)** | ✅ | e2e refund journey, `validateRefund` tests |
 | 25 | Stripe checkout + webhook + invoices | ⚠️ blocked / not viable in PK | `tests/webhook.test.ts`, `e2e`: "billing page reports the missing Stripe config" |
 | 26 | Plans, limits, entitlements | ✅ | `tests/unit.test.ts`, `tests/ai-usage.test.ts` |
 | 27 | Notifications + bell + clear | ✅ | `e2e`: "notifications: the bell shows what happened" |
@@ -110,7 +123,7 @@ Har row ka proof ya test ka naam hai — aap khud chala kar dekh sakte hain.
 | 36 | Deployment (Vercel) | ⚠️ **partial** | project + env set; **code deploy nahi hua** |
 | 37 | Cron in production | ⚠️ blocked | Hobby plan = daily only; Pro chahiye |
 | 38 | Mobile app / offline | ❌ not built | — |
-| 39 | Refunds / credit notes | ❌ not built | — |
+| 39 | CI + scheduled backups | ✅ | `.github/workflows/verify.yml`, `backup.yml` |
 | 40 | Real-time updates | ❌ not built | — |
 
 ---
@@ -121,12 +134,12 @@ Har row ka proof ya test ka naam hai — aap khud chala kar dekh sakte hain.
 | --- | --- | --- |
 | Types | `npx tsc --noEmit` | ✅ clean (strict, 0 `any`) |
 | Lint | `npx eslint .` | ✅ 0 errors, 0 warnings |
-| Unit + integration | `npx vitest run` | ✅ **185 passed**, 10 skipped (13 files) |
+| Unit + integration | `npx vitest run` | ✅ **221 passed**, 10 skipped (13 files) |
 | Schema snapshot | `node scripts/build-schema.mjs --check` | ✅ matches 8 migrations + RLS file in sync |
 | Build | `npm run build` | ✅ 34 routes compile |
 | Everything | `npm run verify` | ✅ "all gates green" |
-| E2E (SQLite) | `npx playwright test` | ✅ **24/24** |
-| E2E (PostgreSQL) | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ **24/24** |
+| E2E (SQLite) | `npx playwright test` | ✅ **25/25** |
+| E2E (PostgreSQL) | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ **25/25** |
 | Migrations | `npm run db:migrate` | ✅ 8 migrations: dev SQLite, pg `bizpilot`, pg `bizpilot_ci`, Supabase (005 deliberately skipped) |
 
 ### Test inventory (file → kitne tests)
@@ -137,6 +150,7 @@ Har row ka proof ya test ka naam hai — aap khud chala kar dekh sakte hain.
 | `tests/unit.test.ts` | 33 | core lib: plans, money maths, proposals, csv, validate |
 | `tests/integration.test.ts` | 19 | actions: leads, proposals, automations, documents |
 | `tests/webhook.test.ts` | 19 | Stripe webhook signature, lead capture API + hardening |
+| `tests/gateway.test.ts` | 36 | **wallet gateway webhooks**: HMAC verification, idempotency, amount mismatch, shared approval, refunds, transfer-note collisions |
 | `tests/providers.test.ts` | 15 | Stripe/Resend/AI against local HTTP doubles |
 | `tests/rbac-notifications.test.ts` | 15 | permissions matrix, notifications |
 | `tests/integrations.test.ts` | 13 | Dropbox OAuth state, token refresh, credentials |
@@ -189,7 +203,7 @@ Har row ka proof ya test ka naam hai — aap khud chala kar dekh sakte hain.
 | Vercel project | ✅ bana | `bizpilot-ai` · `prj_Yjg54ublYIGrnKFvYLRPsev78rdJ` · region `iad1` · framework nextjs |
 | Vercel env vars | ✅ set | `CRON_SECRET` (sensitive), `ADMIN_EMAIL` |
 | Vercel plan | ⚠️ **Hobby** | Hobby pe **commercial use allowed nahi** + cron din mein 1 baar. Paisay lene se pehle **Pro $20/mo** |
-| Supabase project | ✅ live | `bizpilot` · ref `mpzuknincvfrfrvanpio` · us-east-1 · PG 17.12 · **30 tables, 7 migrations, 4 plans** |
+| Supabase project | ✅ live | `bizpilot` · ref `mpzuknincvfrfrvanpio` · us-east-1 · PG 17.12 · **32 tables, 8 migrations, 4 plans** |
 | Supabase RLS migration | ⚠️ skip (jaan boojh kar) | 005 `auth.uid()` ko replace karti hai jo Supabase Auth ko tor deti — `MIGRATION_SKIP=005`, sach reported |
 | `DATABASE_URL` in Vercel | ❌ **pending** | aap ke Supabase dashboard se **Session pooler (5432)** string chahiye |
 | Code deploy | ❌ **pending** | GitHub connector on karein (main push + deploy kar dunga) ya `vercel --prod` |
@@ -232,6 +246,7 @@ Har row ka proof ya test ka naam hai — aap khud chala kar dekh sakte hain.
 | 006 | scheduled_automations | `schedule_interval_minutes`, `next_run_at`, `integration_credentials` | ✅ | ✅ | ✅ |
 | 007 | proposal_responses | `accepted_by_name`, `rejected_reason` | ✅ | ✅ | ✅ |
 | 008 | local_payments | `local_payment_methods`, `local_payment_requests` | ✅ | ✅ | ✅ |
+| 009 | gateway + refunds | `gateway_provider`/`gateway_payment_id`/`paid_at`, `payment_refunds` | ✅ | ✅ | ✅ |
 
 `sql/schema.sqlite.sql` generated snapshot hai — `--check` CI gate pass karta hai (drift nahi ho sakta).
 
@@ -325,7 +340,29 @@ npm run db:migrate && npm run db:seed:pg
 
 ---
 
-# 12. Aakhri baat
+# 12. Is round mein kya kya kiya (short log)
+
+1. **Migration 009** — `gateway_provider`, `gateway_payment_id`, `paid_at` + `payment_refunds`
+   table. Applied: dev SQLite, `data/e2e.db`, local Postgres `bizpilot` + `bizpilot_ci`,
+   aur **Supabase production** (32 tables, 8 migration rows).
+2. **Gateway adapters** — `src/lib/payments/{provider,sadapay,jazzcash,easypaisa,registry}.ts`:
+   HMAC verification (constant-time), amount unit normalisation, status mapping.
+3. **Shared approval path** — `src/lib/payments/approve.ts`; manual button aur webhook dono
+   ek hi function chalate hain, is liye do raste kabhi disagree nahi kar sakte.
+4. **Webhook route** — `POST /api/payments/webhook/<provider>`: 503/401/413 guards,
+   `webhook_events` idempotency, amount mismatch pe approve nahi, ambiguous reference pe guess nahi.
+5. **Refunds** — action + UI + `payment_refunds` + rules; full refund pe subscription `canceled`.
+6. **Transfer-note collision bug fix** — pehle `BP-<slug 10 chars>` tha (do customers ka same ho
+   sakta tha); ab `BP-<slug8>-<digest4>`, 5,000 workspace pe zero collision, ambiguity pe refuse.
+7. **CI + backups** — `.github/workflows/verify.yml` (gates + real Postgres + e2e),
+   `.github/workflows/backup.yml` (roz `pg_dump`, 30 din artifact).
+8. **PKR-first copy** — `marketing/LAUNCH-KIT.md`, `docs/LAUNCH-RUNBOOK.md` rupee table + SadaPay-first.
+9. **Docs** — `docs/PAYMENTS-PAKISTAN.md` (gateway + refunds section), `docs/DATABASE.md`,
+   `PROJECT_STATUS.md`, `README.md`, `.env.example`.
+10. **Verification** — `npm run verify` all green; **221 unit**; **25/25 e2e SQLite aur Postgres**;
+    live preview server chal raha hai (`/`, `/login`, `/pricing` = 200; readiness `ready: true, 9 applied`).
+
+# 13. Aakhri baat
 
 Ye project **"complete" nahi hai** aur main aisa nahi kahunga. Jo hai:
 - ek **poora, tested, production-grade SaaS codebase** — 185 unit tests, 24 e2e journeys, dono database engines pe pass;
