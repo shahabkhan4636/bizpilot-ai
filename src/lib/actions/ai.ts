@@ -8,7 +8,8 @@ import { requireAuth } from "@/lib/auth";
 import { audit, logActivity } from "@/lib/audit";
 import { checkAiLimit, checkFeature, recordUsage } from "@/lib/plans";
 import { recordAiUsage } from "@/lib/ai-usage";
-import { sendEmail, isEmailConfigured } from "@/lib/email";
+import { isEmailConfigured } from "@/lib/email";
+import { deliverEmail } from "@/lib/email-outbox";
 import { generateText, buildContentPrompt, AI_KINDS, AI_KIND_LABEL, type AiKind } from "@/lib/ai";
 import { ValidationError, str, optionalStr, oneOf, email as emailField } from "@/lib/validate";
 import { rateLimit } from "@/lib/ratelimit";
@@ -182,7 +183,7 @@ export async function approveAndSendAction(_prev: AiState, form: FormData): Prom
       };
     }
 
-    const sent = await sendEmail({ to, subject, text: body });
+    const sent = await deliverEmail({ to, subject, text: body, kind: "automation", organizationId: orgId });
     if (!sent.ok) {
       run("update messages set status = 'failed' where id = ? and organization_id = ?", [messageId, orgId]);
       audit({ organizationId: orgId, actorId: user.id, action: "message.send_failed", targetType: "message", targetId: messageId, metadata: { code: sent.code } });

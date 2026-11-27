@@ -97,6 +97,7 @@ To get an admin panel, set `ADMIN_EMAIL` in `.env.local` **before** signing up w
 | `npm run db:migrate` | Apply pending migrations; `--status`, `--down N`, `--to ID`, `--baseline` |
 | `npm run db:schema` | Regenerate `sql/schema.sqlite.sql`; `--check` fails if it is stale |
 | `npm run db:migrate` also seeds the plan catalogue | required: `subscriptions.plan_code` references `plans(code)` |
+| `GET /api/cron/email` | Email retry worker (`Authorization: Bearer $CRON_SECRET`); retries 5 min → 30 min → 2 h, then leaves the row for `/admin/email` |
 | `POST /api/payments/webhook/<provider>` | Signed wallet callback (sadapay / jazzcash / easypaisa) → approves the matching claim; 503 when unconfigured, 401 when unsigned |
 | `GET /api/cron/automations` | Scheduler entry point (`Authorization: Bearer $CRON_SECRET`); `?dryRun=1` reports without changing anything |
 | `GET /api/documents/[id]/download` | Signed-in download of one document, scoped to its workspace (404 for another workspace's id) |
@@ -139,6 +140,7 @@ Names only — see `.env.example` for the full annotated list.
 | `ADMIN_EMAIL` | Which account becomes super-admin |
 | `LEAD_CAPTURE_KEY` | Enables the public lead capture endpoint |
 | `PKR_PER_USD` | Rupee price shown for the USD plan catalogue (default 280) |
+| `RESEND_FROM_EMAIL` | From address for every transactional email (falls back to `EMAIL_FROM`) |
 | `SADAPAY_WEBHOOK_SECRET` / `SADAPAY_SIGNATURE_HEADER` | Verified SadaPay webhooks → automatic plan activation |
 | `JAZZCASH_INTEGRITY_SALT` | Verified JazzCash `pp_SecureHash` callbacks |
 | `EASYPAISA_HASH_KEY` | Verified Easypaisa signed callbacks |

@@ -79,7 +79,12 @@ export default async function AdminPage() {
       <PageHeader
         title="Admin panel"
         description="Platform-wide view. Access is verified on the server for every request, not just hidden in the UI."
-        actions={<Link href="/help"><Button size="sm" variant="outline">Operations guide</Button></Link>}
+        actions={
+          <div className="flex gap-2">
+            <Link href="/admin/email"><Button size="sm" variant="outline">Email outbox</Button></Link>
+            <Link href="/help"><Button size="sm" variant="outline">Operations guide</Button></Link>
+          </div>
+        }
       />
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

@@ -74,7 +74,7 @@ All policies are keyed on the caller's organisation membership. It is defence in
 - the SQLite variant of 005 is a documented no-op (SQLite has no policies; isolation there is the
   query layer, asserted by the test suite).
 
-## Migrations 001–009 at a glance
+## Migrations 001–010 at a glance
 
 | # | What it does |
 | --- | --- |
@@ -87,6 +87,7 @@ All policies are keyed on the caller's organisation membership. It is defence in
 | 007 | proposal responses: `accepted_by_name`, `rejected_reason` (who signed, and why not) |
 | 008 | local (Pakistani) payments: `local_payment_methods`, `local_payment_requests` |
 | 009 | gateway + refunds: `gateway_provider`/`gateway_payment_id`/`paid_at` on requests, `payment_refunds` |
+| 010 | email outbox: `email_outbox` (status, attempts, retry schedule, provider id) |
 
 ## Plan catalogue
 

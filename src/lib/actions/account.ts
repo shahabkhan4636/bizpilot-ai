@@ -7,7 +7,8 @@ import { all, get, run, tx } from "@/lib/db";
 import { requireAuth, requireUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { verifyPassword } from "@/lib/password";
-import { sendEmail, isEmailConfigured } from "@/lib/email";
+import { isEmailConfigured } from "@/lib/email";
+import { deliverEmail } from "@/lib/email-outbox";
 import { issueVerificationToken } from "@/lib/email-verification";
 import { rateLimit } from "@/lib/ratelimit";
 import { clearSessionCookie } from "@/lib/session";
@@ -37,10 +38,14 @@ export async function resendVerificationAction(_prev: AccountState, _form: FormD
       link,
     };
   }
-  const sent = await sendEmail({
+  const sent = await deliverEmail({
     to: user.email,
     subject: "Verify your email address for BizPilot AI",
     text: `Confirm your email address to finish setting up your account.\n\n${link}\n\nThis link expires on ${expiresAt}.`,
+    kind: "verify_email",
+    // No membership lookup here on purpose: a verification email must be sendable
+    // before onboarding finishes, and the outbox row does not need a workspace.
+    organizationId: null,
   });
   if (!sent.ok) return { error: `The email provider rejected the message: ${sent.message}` };
   return { notice: `Verification email sent to ${user.email}.` };

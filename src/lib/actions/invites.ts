@@ -12,7 +12,8 @@ import { audit } from "@/lib/audit";
 import { hashPassword, passwordProblems } from "@/lib/password";
 import { createSession, setSessionCookie } from "@/lib/session";
 import { getEffectivePlan } from "@/lib/plans";
-import { sendEmail, isEmailConfigured } from "@/lib/email";
+import { isEmailConfigured } from "@/lib/email";
+import { deliverEmail } from "@/lib/email-outbox";
 import { rateLimit } from "@/lib/ratelimit";
 import { ValidationError, str, email as emailField, oneOf } from "@/lib/validate";
 
@@ -83,8 +84,10 @@ export async function inviteMemberAction(_prev: InviteState, form: FormData): Pr
     revalidatePath("/settings");
 
     const link = `${await baseUrl()}/invite/${token}`;
-    const sent = await sendEmail({
+    const sent = await deliverEmail({
       to: email,
+      kind: "invite",
+      organizationId: orgId,
       subject: `You have been invited to ${membership.organization_name} on BizPilot AI`,
       text: `You have been invited to join "${membership.organization_name}" as ${role}.\n\nAccept the invitation (valid for 7 days):\n${link}\n\nIf you were not expecting this, ignore this email.`,
     });

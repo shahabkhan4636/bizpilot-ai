@@ -103,3 +103,33 @@ test("the owner is identified by the env var, so the same person keeps access af
   expect(response?.status()).toBe(200);
   await expect(page.getByRole("heading", { name: "Admin panel" })).toBeVisible({ timeout: 20_000 });
 });
+
+test("the email outbox is admin-only and queues instead of lying when Resend is missing", async ({ browser }) => {
+  // A stranger gets the same 404 as any other /admin route.
+  const strangerContext = await browser.newContext();
+  const strangerPage = await strangerContext.newPage();
+  await ensureUser(strangerPage, stranger);
+  const blocked = await strangerPage.goto("/admin/email");
+  expect(blocked?.status()).toBe(404);
+  await strangerContext.close();
+
+  // The owner sees the outbox, plus an honest "not configured" state.
+  const ownerContext = await browser.newContext();
+  const ownerPage = await ownerContext.newPage();
+  await ensureUser(ownerPage, owner);
+  const page = await ownerPage.goto("/admin/email");
+  expect(page?.status()).toBe(200);
+  await expect(ownerPage.getByRole("heading", { name: "Email outbox" })).toBeVisible({ timeout: 20_000 });
+  await expect(ownerPage.getByText(/Email is not configured on this deployment/)).toBeVisible();
+
+  // A test send in this state must queue the message and say so — never claim it left.
+  await ownerPage.getByRole("button", { name: /Queue test email/i }).click();
+  await expect(ownerPage.getByText(/queued in the outbox/i)).toBeVisible({ timeout: 20_000 });
+  await expect(ownerPage.getByText(/Email is not configured on this deployment/)).toBeVisible();
+
+  // And the queued row is visible with zero attempts burned.
+  await expect(ownerPage.getByRole("heading", { name: "Queued" })).toBeVisible();
+  await expect(ownerPage.getByText(owner.email).first()).toBeVisible();
+
+  await ownerContext.close();
+});

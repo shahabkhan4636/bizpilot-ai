@@ -11,7 +11,8 @@ import { hashPassword, verifyPassword, passwordProblems } from "@/lib/password";
 import { createSession, setSessionCookie, clearSessionCookie } from "@/lib/session";
 import { audit } from "@/lib/audit";
 import { rateLimit, LOGIN_LIMIT, LOGIN_WINDOW_SECONDS, SIGNUP_LIMIT, SIGNUP_WINDOW_SECONDS } from "@/lib/ratelimit";
-import { sendEmail, isEmailConfigured } from "@/lib/email";
+import { isEmailConfigured } from "@/lib/email";
+import { deliverEmail } from "@/lib/email-outbox";
 import { superAdminFlag } from "@/lib/owner";
 import { ValidationError, str, email as emailField } from "@/lib/validate";
 import { DEFAULT_PLAN_CODE } from "@/lib/plans";
@@ -155,16 +156,20 @@ export async function requestPasswordResetAction(_prev: ActionState, form: FormD
     const base = (await headers()).get("origin") ?? appUrl();
     const link = `${base}/reset-password?token=${token}`;
 
-    const sent = await sendEmail({
+    const sent = await deliverEmail({
       to: user.email,
       subject: "Reset your BizPilot AI password",
       text: `Use this link within 24 hours to choose a new password:\n\n${link}\n\nIf you did not request this, ignore this email.`,
+      kind: "password_reset",
     });
 
     if (sent.ok) return { notice: generic };
     // Email is not configured in this deployment: hand the link over directly rather than
     // claiming an email was sent. This branch is only reachable without RESEND_API_KEY.
     if (!isEmailConfigured()) {
+      // The message is queued in email_outbox, so it can still be delivered once
+      // RESEND_API_KEY exists — and the link is handed over now so the person is
+      // never locked out in the meantime.
       return {
         notice: generic,
         fieldErrors: { resetLink: link },

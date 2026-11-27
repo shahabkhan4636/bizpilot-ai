@@ -1,11 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { run, get } from "@/lib/db";
 import { nowIso } from "@/lib/utils";
 import { requireSuperAdmin } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { ValidationError, str, int, optionalStr } from "@/lib/validate";
+import { logger } from "@/lib/logger";
+import { dispatchQueuedEmails, deliverEmail } from "@/lib/email-outbox";
+import { emailFromAddress } from "@/lib/email";
+import { ValidationError, str, int, optionalStr, email as emailField } from "@/lib/validate";
 
 export type AdminState = { error?: string; notice?: string } | null;
 
@@ -91,4 +95,110 @@ export async function setOrganizationPlanAction(_prev: AdminState, form: FormDat
   }
   revalidatePath("/admin");
   return { notice: "Plan assigned manually (no Stripe charge — use for support and QA)." };
+}
+
+/* ------------------------------------------------------------ email outbox */
+
+/**
+ * Retries specific outbox rows now.
+ *
+ * A human pressing "retry" outranks the backoff clock (`force`), because the
+ * person knows the provider is back and the schedule does not.
+ */
+export async function retryOutboxEmailAction(form: FormData): Promise<void> {
+  const admin = await requireSuperAdmin();
+  const id = String(form.get("outbox_id") ?? "");
+  const ids = id ? [id] : undefined;
+  const summary = await dispatchQueuedEmails({ ids, force: true, limit: 50 });
+  audit({
+    organizationId: null,
+    actorId: admin.id,
+    action: "email_outbox.retry",
+    targetType: "email_outbox",
+    targetId: id || "all",
+    metadata: { ...summary },
+  });
+  logger.info("admin email retry", { adminId: admin.id, id: id || "all", summary });
+  revalidatePath("/admin/email");
+  redirect("/admin/email");
+}
+
+/** Retries everything that is queued or failed, ignoring the backoff schedule. */
+export async function retryAllEmailsAction(_form: FormData): Promise<void> {
+  const admin = await requireSuperAdmin();
+  const summary = await dispatchQueuedEmails({ force: true, limit: 100 });
+  audit({
+    organizationId: null,
+    actorId: admin.id,
+    action: "email_outbox.retry_all",
+    targetType: "email_outbox",
+    targetId: null,
+    metadata: { ...summary },
+  });
+  revalidatePath("/admin/email");
+  redirect(`/admin/email?retried=${summary.sent}`);
+}
+
+/**
+ * Sends a real test email through the configured provider.
+ *
+ * This is the only honest way to prove email works in a deployment: the outbox
+ * can look healthy while the provider rejects the domain, so the admin gets one
+ * message and its exact provider response.
+ */
+export async function sendTestEmailAction(_prev: AdminState, form: FormData): Promise<AdminState> {
+  try {
+    const admin = await requireSuperAdmin();
+    const to = emailField(form.get("to")).toLowerCase();
+    const result = await deliverEmail({
+      to,
+      subject: "BizPilot AI — test email",
+      text: `This is a test email from your BizPilot AI deployment.
+
+If you are reading this, Resend is configured correctly and outbound email works.
+
+Sent from: ${emailFromAddress()}
+At: ${nowIso()}`,
+      kind: "test",
+    });
+
+    audit({
+      organizationId: null,
+      actorId: admin.id,
+      action: "email_outbox.test_send",
+      targetType: "email_outbox",
+      targetId: result.outboxId,
+      metadata: { to, ok: result.ok, code: result.ok ? "sent" : result.code },
+    });
+
+    if (result.ok) {
+      return { notice: `Test email accepted by Resend (id ${result.id}) for ${to}. Check the inbox and the spam folder.` };
+    }
+    if (result.code === "not_configured") {
+      return {
+        error: `Email is not configured, so nothing was sent — the message is queued in the outbox (row ${result.outboxId.slice(0, 8)}). Add RESEND_API_KEY and press retry.`,
+      };
+    }
+    return { error: `The provider rejected the message: ${result.message} (queued as ${result.outboxId.slice(0, 8)})` };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not send the test email." };
+  }
+}
+
+/** Deletes an outbox row (e.g. a typo'd address that will never be deliverable). */
+export async function deleteOutboxEmailAction(form: FormData): Promise<void> {
+  const admin = await requireSuperAdmin();
+  const id = String(form.get("outbox_id") ?? "");
+  if (id) {
+    run("delete from email_outbox where id = ?", [id]);
+    audit({
+      organizationId: null,
+      actorId: admin.id,
+      action: "email_outbox.deleted",
+      targetType: "email_outbox",
+      targetId: id,
+    });
+  }
+  revalidatePath("/admin/email");
+  redirect("/admin/email");
 }

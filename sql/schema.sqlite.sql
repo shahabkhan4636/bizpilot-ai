@@ -1,6 +1,6 @@
 -- BizPilot AI — consolidated schema snapshot (GENERATED FILE)
 -- Source of truth: sql/migrations/*.up.sql. Regenerate with: npm run db:schema
--- 9 migration(s): 001_initial.up.sql, 002_roles_crm_notifications.up.sql, 003_role_permissions.up.sqlite.sql, 004_widen_invite_roles.up.sqlite.sql, 005_row_level_security.up.sqlite.sql, 006_scheduled_automations.up.sql, 007_proposal_responses.up.sql, 008_local_payments.up.sql, 009_payment_gateway_and_refunds.up.sql
+-- 10 migration(s): 001_initial.up.sql, 002_roles_crm_notifications.up.sql, 003_role_permissions.up.sqlite.sql, 004_widen_invite_roles.up.sqlite.sql, 005_row_level_security.up.sqlite.sql, 006_scheduled_automations.up.sql, 007_proposal_responses.up.sql, 008_local_payments.up.sql, 009_payment_gateway_and_refunds.up.sql, 010_email_outbox.up.sql
 --
 -- Portable SQL: this exact file is applied to SQLite and to PostgreSQL, so the
 -- two deployments cannot diverge. Tenant isolation is enforced in application
@@ -538,3 +538,41 @@ create table if not exists payment_refunds (
   created_at text not null
 );
 create index if not exists payment_refunds_org_idx on payment_refunds (organization_id, created_at desc);
+
+-- ===== 010_email_outbox.up.sql =====
+-- 010 — Email outbox.
+--
+-- Until now an email that could not be sent was reported to the UI and then
+-- forgotten. In practice that loses a password-reset link the moment
+-- RESEND_API_KEY is missing or Resend has a bad minute — the user is told
+-- "not configured" and has no way back in.
+--
+-- Every transactional email is now written here first and only then dispatched:
+--
+--   queued  → written, waiting for an attempt (also the state when the provider
+--             key is missing — the row survives until the key exists)
+--   sent    → provider accepted it; provider id stored for support
+--   failed  → every retry is spent; shown on /admin/email for a human decision
+--
+-- `attempts` and `next_attempt_at` implement the retry schedule (5 min, 30 min,
+-- 2 hours). A provider error burns an attempt; a missing key deliberately does
+-- NOT, because "not configured" is a deployment state, not a delivery failure.
+
+create table if not exists email_outbox (
+  id text primary key,
+  organization_id text references organizations(id) on delete set null,
+  to_email text not null,
+  subject text not null,
+  body_text text not null,
+  kind text not null default 'other',
+  status text not null default 'queued' check (status in ('queued','sending','sent','failed')),
+  attempts integer not null default 0,
+  next_attempt_at text,
+  last_error text,
+  provider_message_id text,
+  created_at text not null,
+  updated_at text not null,
+  sent_at text
+);
+create index if not exists email_outbox_status_idx on email_outbox (status, next_attempt_at);
+create index if not exists email_outbox_created_idx on email_outbox (created_at desc);
