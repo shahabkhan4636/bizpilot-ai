@@ -124,8 +124,19 @@ export async function createAutomationAction(_prev: AutomationState, form: FormD
     if (steps.length === 0) throw new ValidationError("Add at least one action step.");
     if (steps.length > 10) throw new ValidationError("An automation can have at most 10 steps.");
 
+    // A "run on a schedule" automation without an interval would never fire, so the
+    // interval is required (and bounded) for that trigger and ignored for the rest.
+    const rawInterval = Number(form.get("schedule_interval_minutes") ?? "");
+    const scheduleIntervalMinutes =
+      triggerType === "schedule.tick" ? Math.max(5, Math.min(43_200, Math.round(rawInterval) || 60)) : null;
+    if (triggerType === "schedule.tick" && !Number.isFinite(rawInterval)) {
+      throw new ValidationError("Choose how often the scheduled automation should run.");
+    }
+
     const id = createAutomationWithSteps({
       organizationId: orgId, createdBy: user.id, name, description, triggerType, conditions, steps,
+      scheduleIntervalMinutes,
+      nextRunAt: scheduleIntervalMinutes ? nowIso() : null,
     });
     run("update automations set run_limit_per_day = ? where id = ? and organization_id = ?", [runLimit, id, orgId]);
 

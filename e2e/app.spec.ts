@@ -603,3 +603,35 @@ test("strict CSP: no inline-script allowance, every page still hydrates and navi
   expect(violations).toEqual([]);
   await ctx.close();
 });
+
+test("scheduler and Dropbox report their real state instead of pretending", async ({ request, page }) => {
+  // The cron route must refuse to run without a secret; this environment has none.
+  const cron = await request.get("/api/cron/automations");
+  expect(cron.status()).toBe(503);
+  const cronBody = await cron.json();
+  expect(String(cronBody.error)).toMatch(/not configured/i);
+
+  // Readiness names the scheduler and the dropbox connection state.
+  const readiness = await request.get("/api/readiness");
+  const body = await readiness.json();
+  expect(body.providers).toHaveProperty("scheduler");
+  expect(body.providers).toHaveProperty("dropbox");
+
+  // The documents page says which storage is in use, and offers no Connect button
+  // while Dropbox keys are absent. (A fresh signup rather than another login: the
+  // suite is 20 sign-ins long, and login is rate limited to 20 per 10 minutes by
+  // design, so the last test must not need a 21st.)
+  await signup(page, {
+    email: `owner.g.${stamp}@example.com`,
+    password: "TestingPass123",
+    name: "Owner G",
+    company: `Eta ${stamp}`,
+  });
+  await page.goto("/documents");
+  await expect(page.getByText("Files are stored on this server")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Connect Dropbox" })).toHaveCount(0);
+
+  // The automations page warns that time-based triggers cannot fire.
+  await page.goto("/automations");
+  await expect(page.getByText("The scheduler is not configured")).toBeVisible();
+});

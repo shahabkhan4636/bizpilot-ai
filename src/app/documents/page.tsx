@@ -8,12 +8,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { EmptyState, Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { UploadDocumentForm, DeleteDocumentButton } from "@/components/documents/document-forms";
 import { all, get } from "@/lib/db";
-import { isDropboxConfigured } from "@/lib/storage";
+import { dropboxAppConfigured, getCredential } from "@/lib/integrations";
+import { buttonVariants } from "@/components/ui/button";
+import { HardDrive } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Documents", robots: { index: false } };
 
-export default async function DocumentsPage() {
+export default async function DocumentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ dropbox?: string; reason?: string }>;
+}) {
   const ctx = await loadAppContext();
 
   const documents = all<{
@@ -36,8 +42,13 @@ export default async function DocumentsPage() {
     [ctx.orgId]
   ) ?? { count: 0, bytes: 0 };
 
-  const dropboxReady = isDropboxConfigured();
-  const tokenPresent = Boolean((process.env.DROPBOX_ACCESS_TOKEN ?? "").trim());
+  const sp = await searchParams;
+  const connectResult = sp.dropbox;
+  const dropboxReady = dropboxAppConfigured();
+  const credential = getCredential(ctx.orgId, "dropbox");
+  const deploymentToken = Boolean((process.env.DROPBOX_ACCESS_TOKEN ?? "").trim());
+  const connected = Boolean(credential) || deploymentToken;
+  const canConnect = ctx.can("settings:workspace");
 
   return (
     <AppShell
@@ -54,23 +65,52 @@ export default async function DocumentsPage() {
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <StatCard label="Files" value={String(totals.count)} hint={`Limit ${ctx.plan.document_limit.toLocaleString()}`} />
         <StatCard label="Storage used" value={`${(totals.bytes / 1024 / 1024).toFixed(2)} MB`} />
-        <StatCard label="Dropbox" value={dropboxReady && tokenPresent ? "Connected" : "Not connected"} tone={dropboxReady && tokenPresent ? "good" : "warn"} />
+        <StatCard
+          label="Dropbox"
+          value={connected ? "Connected" : "Local storage"}
+          tone={connected ? "good" : "warn"}
+          hint={credential?.account_label ? `Account ${credential.account_label.slice(0, 12)}…` : undefined}
+        />
       </div>
 
-      {!dropboxReady ? (
+      {connectResult ? (
         <div className="mb-4">
-          <Alert tone="info" title="Files are stored on this server">
-            Dropbox OAuth keys are not configured, so uploads are written to <code>data/uploads</code> and marked
-            <code> storage_provider = local</code>. Add <code>DROPBOX_APP_KEY</code>, <code>DROPBOX_APP_SECRET</code> and{" "}
-            <code>DROPBOX_ACCESS_TOKEN</code> to store files in Dropbox instead. See the README for the OAuth steps.
+          <Alert
+            tone={connectResult === "connected" ? "success" : "danger"}
+            title={
+              connectResult === "connected"
+                ? "Dropbox connected"
+                : connectResult === "forbidden"
+                  ? "Only a workspace owner or admin can connect Dropbox"
+                  : "Dropbox was not connected"
+            }
+          >
+            {connectResult === "connected"
+              ? "New uploads are stored in this workspace's Dropbox account."
+              : `Reason: ${connectResult.replace(/_/g, " ")}${sp.reason ? ` — ${sp.reason}` : ""}`}
           </Alert>
         </div>
       ) : null}
-      {dropboxReady && !tokenPresent ? (
-        <div className="mb-4">
-          <Alert tone="warning" title="Dropbox keys present, token missing">
-            Complete the OAuth flow described in the README and set <code>DROPBOX_ACCESS_TOKEN</code>. Until then uploads stay local.
+
+      {!connected ? (
+        <div className="mb-4 space-y-3">
+          <Alert tone="info" title="Files are stored on this server">
+            Uploads are written to <code>data/uploads</code> and marked{" "}
+            <code>storage_provider = local</code>.{" "}
+            {dropboxReady
+              ? "Connect this workspace's Dropbox to move new files into your own account — files already stored locally stay readable."
+              : "Add DROPBOX_APP_KEY and DROPBOX_APP_SECRET to enable the Connect button."}
           </Alert>
+          {dropboxReady && canConnect ? (
+            <div>
+              <a
+                href="/api/integrations/dropbox/start"
+                className={buttonVariants({ size: "sm", variant: "outline" })}
+              >
+                <HardDrive className="h-4 w-4" /> Connect Dropbox
+              </a>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

@@ -96,6 +96,8 @@ To get an admin panel, set `ADMIN_EMAIL` in `.env.local` **before** signing up w
 | `npm run test:e2e` | Playwright against a production build on port 3100 (19 journeys) |
 | `npm run db:migrate` | Apply pending migrations; `--status`, `--down N`, `--to ID`, `--baseline` |
 | `npm run db:schema` | Regenerate `sql/schema.sqlite.sql`; `--check` fails if it is stale |
+| `npm run db:migrate` also seeds the plan catalogue | required: `subscriptions.plan_code` references `plans(code)` |
+| `GET /api/cron/automations` | Scheduler entry point (`Authorization: Bearer $CRON_SECRET`); `?dryRun=1` reports without changing anything |
 | `npm run db:backup` | Verified backup (`pg_dump` / `VACUUM INTO`) → gzipped file |
 | `npm run db:restore` | Restore a backup, with destructive-command guardrails |
 | `npm run seed` | Create/reset the first account |
@@ -219,15 +221,24 @@ Verified in this repository, on PostgreSQL 17.12:
 
 ## 8. Dropbox setup
 
-1. Create an app at <https://www.dropbox.com/developers/apps> with **App folder** or **Full Dropbox** access and the
+Files can live in the workspace's own Dropbox — each organisation connects its own account, so one
+customer's contracts never land in another's.
+
+1. Create an app at <https://www.dropbox.com/developers/apps> (App folder or Full Dropbox) with the
    `files.content.write` + `files.content.read` scopes.
 2. Add the redirect URI `<NEXT_PUBLIC_APP_URL>/api/integrations/dropbox/callback`.
-3. Exchange the authorisation code for a token and put the long-lived token in `DROPBOX_ACCESS_TOKEN`.
-4. `DROPBOX_APP_KEY` + `DROPBOX_APP_SECRET` must also be present; files then upload to `/<organisation-id>/<filename>`
-   and the row records `storage_provider = 'dropbox'`. If an upload fails, the file stays on local disk and the UI says
-   so.
+3. Set `DROPBOX_APP_KEY` and `DROPBOX_APP_SECRET`. The **Connect Dropbox** button on `/documents`
+   then appears for owners and admins (it is hidden for everyone else, and the route refuses them).
+4. Click it: `/api/integrations/dropbox/start` signs a state value and redirects to Dropbox;
+   `/api/integrations/dropbox/callback` verifies that state, exchanges the code for an access +
+   refresh token, and stores them against **that workspace** (`integration_credentials`). The state is
+   HMAC-signed and expires in 10 minutes, so a link crafted for another workspace is rejected.
+5. Uploads then go to `/<organisation-id>/<filename>` and the row records
+   `storage_provider = 'dropbox'`. If an upload fails the file stays on local disk and the UI says so.
 
-Files live in Dropbox; every record (lead, customer, proposal, invoice-like totals) stays in Postgres/SQLite.
+`DROPBOX_ACCESS_TOKEN` is still honoured as a deployment-wide fallback for single-tenant
+self-hosting. Without any of this, files are stored under `data/uploads` and marked `local` — the page
+says which of the two is active rather than leaving you guessing.
 
 ## 9. QA checklist (run before selling)
 

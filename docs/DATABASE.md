@@ -60,6 +60,17 @@ All policies are keyed on the caller's organisation membership. It is defence in
 - the SQLite variant of 005 is a documented no-op (SQLite has no policies; isolation there is the
   query layer, asserted by the test suite).
 
+## Migrations 001–006 at a glance
+
+| # | What it does |
+| --- | --- |
+| 001 | initial portable schema |
+| 002 | roles, email verification, notifications, CRM tags, proposal financials |
+| 003 | role CHECK constraint (engine-specific rebuild) |
+| 004 | widen `org_invites.role` so manager/viewer invitations are accepted |
+| 005 | row-level security (generated from `sql/rls.postgres.sql`) |
+| 006 | scheduled automations (`schedule_interval_minutes`, `next_run_at`) + `integration_credentials` |
+
 ## Plan catalogue
 
 `npm run db:migrate` also applies `sql/seed_plans.sql` (idempotent upserts) and prints

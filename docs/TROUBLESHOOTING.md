@@ -20,6 +20,12 @@ in that response.
 | Stripe webhook returns 400 | signature mismatch | `STRIPE_WEBHOOK_SECRET` must match the endpoint that is calling, not another one |
 | Webhook handled twice | provider retried | expected — `webhook_events` makes handling idempotent; check the event id is stored |
 | Email "sent" but never arrived | provider rejected it | the app only reports success on a 2xx from Resend; check the response body in the logs |
+| Scheduled automations never fire | no scheduler, or `CRON_SECRET` missing | set `CRON_SECRET` and point a scheduler (or Vercel Cron) at `/api/cron/automations`; the automations page warns when it is unset |
+| Cron route returns 503 | `CRON_SECRET` is empty | set it — the route refuses to run unauthenticated by design |
+| Cron route returns 401 | token mismatch | the bearer token must equal `CRON_SECRET` exactly |
+| "Connect Dropbox" button missing | `DROPBOX_APP_KEY`/`DROPBOX_APP_SECRET` not set, or the role is not owner/admin | set both keys; only `settings:workspace` holders can connect |
+| Dropbox callback says `state_mismatch` | the link was issued for a different workspace/user, or it expired (10 min) | press Connect again |
+| Uploads still say `local` after connecting | `DROPBOX_CONTENT_URL` unreachable, or the app scopes are wrong | check the upload error in the notice; the file is kept locally rather than lost |
 | `npm run test:e2e` hangs at webServer | port 3100 already in use | stop the stale `next start` (`E2E_PORT=3200` to move it) |
 | Playwright test fails alone but passes in the suite | the suite is serial and resets the database | run the whole file, or pick a self-contained test |
 

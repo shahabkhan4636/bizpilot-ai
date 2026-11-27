@@ -13,6 +13,8 @@ export const TRIGGERS = [
   "document.uploaded",
   "subscription.payment_succeeded",
   "subscription.payment_failed",
+  // Fired by the cron runner (/api/cron/automations), not by a user action.
+  "schedule.tick",
 ] as const;
 export type TriggerType = (typeof TRIGGERS)[number];
 
@@ -25,7 +27,11 @@ export const TRIGGER_LABEL: Record<TriggerType, string> = {
   "document.uploaded": "Document uploaded",
   "subscription.payment_succeeded": "Subscription payment succeeded",
   "subscription.payment_failed": "Subscription payment failed",
+  "schedule.tick": "On a schedule (every N minutes)",
 };
+
+/** Trigger types driven by the scheduler rather than by an event in the app. */
+export const SCHEDULED_TRIGGERS: readonly TriggerType[] = ["schedule.tick", "followup.overdue"];
 
 export const ACTIONS = [
   "create_task",

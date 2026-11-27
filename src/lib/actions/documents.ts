@@ -12,6 +12,7 @@ import {
   saveFileLocal, deleteFileLocal, uploadToDropbox, isDropboxConfigured,
 } from "@/lib/storage";
 import { ValidationError, optionalStr } from "@/lib/validate";
+import { dropboxAccessTokenFor } from "@/lib/integrations";
 import { dispatchTrigger } from "@/lib/automations";
 
 export type DocumentState = { error?: string; notice?: string } | null;
@@ -61,8 +62,10 @@ export async function uploadDocumentAction(_prev: DocumentState, form: FormData)
     let storagePath = stored.path;
     let dropboxNote = "";
 
-    // Real Dropbox upload only when a token is supplied; otherwise we stay honestly local.
-    const token = (process.env.DROPBOX_ACCESS_TOKEN ?? "").trim();
+    // Order of preference: the workspace's own OAuth connection, then a
+    // deployment-wide token (single-tenant self-hosting). Otherwise stay local.
+    const workspaceToken = await dropboxAccessTokenFor(orgId);
+    const token = workspaceToken ?? (process.env.DROPBOX_ACCESS_TOKEN ?? "").trim();
     if (isDropboxConfigured() && token) {
       const result = await uploadToDropbox(token, `/${orgId}/${file.name}`, bytes);
       if (result.ok) {

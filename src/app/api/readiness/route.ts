@@ -34,7 +34,12 @@ export async function GET() {
     stripe: isStripeConfigured(),
     email: isEmailConfigured(),
     ai: Boolean(process.env.AI_API_KEY),
-    dropbox: (process.env.DROPBOX_ACCESS_TOKEN ?? "").trim().length > 0,
+    dropbox:
+      ((process.env.DROPBOX_APP_KEY ?? "").trim().length > 0 &&
+        (process.env.DROPBOX_APP_SECRET ?? "").trim().length > 0) ||
+      (process.env.DROPBOX_ACCESS_TOKEN ?? "").trim().length > 0,
+    // Time-based automations need a scheduler; event triggers work without it.
+    scheduler: (process.env.CRON_SECRET ?? "").trim().length > 0,
   };
 
   const warnings = Object.entries(providers)

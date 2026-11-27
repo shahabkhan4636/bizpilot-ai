@@ -1,6 +1,6 @@
 -- BizPilot AI — consolidated schema snapshot (GENERATED FILE)
 -- Source of truth: sql/migrations/*.up.sql. Regenerate with: npm run db:schema
--- 5 migration(s): 001_initial.up.sql, 002_roles_crm_notifications.up.sql, 003_role_permissions.up.sqlite.sql, 004_widen_invite_roles.up.sqlite.sql, 005_row_level_security.up.sqlite.sql
+-- 6 migration(s): 001_initial.up.sql, 002_roles_crm_notifications.up.sql, 003_role_permissions.up.sqlite.sql, 004_widen_invite_roles.up.sqlite.sql, 005_row_level_security.up.sqlite.sql, 006_scheduled_automations.up.sql
 --
 -- Portable SQL: this exact file is applied to SQLite and to PostgreSQL, so the
 -- two deployments cannot diverge. Tenant isolation is enforced in application
@@ -419,3 +419,31 @@ create index if not exists org_invites_email_idx on org_invites (email);
 -- organization_id), which the test suite asserts. The Postgres variant of this
 -- migration creates the same 83 policies the production database runs on.
 select 1;
+
+-- ===== 006_scheduled_automations.up.sql =====
+-- 006 — Scheduled automations and per-workspace integration credentials.
+--
+-- Until now every trigger was an event (lead created, proposal accepted…). A
+-- "run every N minutes" automation needs two columns to know when it is next due,
+-- and the Dropbox connect flow needs somewhere to keep a workspace's token.
+
+alter table automations add column schedule_interval_minutes integer;
+alter table automations add column next_run_at text;
+
+create index if not exists automations_due_idx on automations (trigger_type, is_active, next_run_at);
+
+create table if not exists integration_credentials (
+  id text primary key,
+  organization_id text not null references organizations(id) on delete cascade,
+  provider text not null,
+  access_token text,
+  refresh_token text,
+  expires_at text,
+  account_label text,
+  scopes text,
+  created_by text references profiles(id) on delete set null,
+  created_at text not null,
+  updated_at text not null,
+  constraint integration_credentials_unique unique (organization_id, provider)
+);
+create index if not exists integration_credentials_org_idx on integration_credentials (organization_id);

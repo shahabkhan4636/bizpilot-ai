@@ -167,6 +167,22 @@ export function AutomationBuilder({ leadCount }: { leadCount: number }) {
             {TRIGGERS.map((t) => <option key={t} value={t}>{TRIGGER_LABEL[t]}</option>)}
           </Select>
         </div>
+        {trigger === "schedule.tick" ? (
+          <div className="space-y-1.5">
+            <Label htmlFor="schedule_interval_minutes">Run every (minutes) *</Label>
+            <Input
+              id="schedule_interval_minutes"
+              name="schedule_interval_minutes"
+              type="number"
+              min={5}
+              max={43200}
+              defaultValue={60}
+            />
+            <p className="text-xs text-[hsl(var(--fg-muted))]">
+              The scheduler runs every 10 minutes; anything under that waits for the next tick.
+            </p>
+          </div>
+        ) : null}
         <div className="space-y-1.5">
           <Label htmlFor="run_limit_per_day">Max runs per day</Label>
           <Input id="run_limit_per_day" name="run_limit_per_day" type="number" min={1} max={5000} value={runLimit} onChange={(e) => setRunLimit(e.target.value)} />

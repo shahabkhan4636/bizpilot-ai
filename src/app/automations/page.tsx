@@ -13,6 +13,7 @@ import { listAutomationsWithStats } from "@/lib/actions/automations";
 import { executionHistory } from "@/lib/automations";
 import { TRIGGER_LABEL } from "@/lib/automation-meta";
 import { all } from "@/lib/db";
+import { upcomingScheduledRuns, overdueFollowupCount } from "@/lib/scheduler";
 import { relativeTime } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Automations", robots: { index: false } };
@@ -30,6 +31,9 @@ export default async function AutomationsPage() {
   const totalRuns = automations.reduce((s, a) => s + a.runs, 0);
   const failures = automations.reduce((s, a) => s + a.failures, 0);
   const automationAllowed = ctx.plan.automation_limit > 0;
+  const scheduled = upcomingScheduledRuns(ctx.orgId);
+  const overdue = overdueFollowupCount(ctx.orgId);
+  const schedulerConfigured = (process.env.CRON_SECRET ?? "").trim().length > 0;
 
   return (
     <AppShell
@@ -49,6 +53,55 @@ export default async function AutomationsPage() {
             The {ctx.plan.name} plan does not include automations. You can still inspect this page; create one after
             upgrading on the billing page.
           </Alert>
+        </div>
+      ) : null}
+
+      {!schedulerConfigured ? (
+        <div className="mb-4">
+          <Alert tone="warning" title="The scheduler is not configured">
+            Event triggers (new lead, status change, proposal accepted…) fire immediately. Time-based triggers —
+            &ldquo;on a schedule&rdquo; and &ldquo;follow-up overdue&rdquo; — need <code>CRON_SECRET</code> and a scheduler calling{" "}
+            <code>/api/cron/automations</code>. Until then those automations will not fire and nothing pretends they did.
+          </Alert>
+        </div>
+      ) : null}
+
+      {scheduled.length > 0 || overdue > 0 ? (
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Scheduled runs</CardTitle>
+              <CardDescription>Driven by the cron runner, every 10 minutes.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-1 text-sm">
+              {scheduled.length === 0 ? (
+                <p className="text-[hsl(var(--fg-muted))]">No scheduled automations.</p>
+              ) : (
+                scheduled.map((a) => (
+                  <div key={a.id} className="flex items-center justify-between gap-3">
+                    <span className="truncate">{a.name}</span>
+                    <span className="whitespace-nowrap text-xs text-[hsl(var(--fg-muted))]">
+                      every {a.schedule_interval_minutes}m · {a.next_run_at ? `next ${relativeTime(a.next_run_at)}` : "due now"}
+                    </span>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Overdue follow-ups</CardTitle>
+              <CardDescription>Leads whose follow-up date has passed.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold">{overdue}</p>
+              <p className="text-xs text-[hsl(var(--fg-muted))]">
+                {overdue === 0
+                  ? "Nothing overdue — the follow-up trigger has nothing to do."
+                  : "Each one fires the follow-up automation once, not on every run."}
+              </p>
+            </CardContent>
+          </Card>
         </div>
       ) : null}
 

@@ -47,7 +47,7 @@ export type StepRow = {
 };
 
 export type TriggerEntity = {
-  type: "lead" | "customer" | "proposal" | "document" | "subscription";
+  type: "lead" | "customer" | "proposal" | "document" | "subscription" | "schedule";
   id: string;
   data: Record<string, unknown>;
   /** extra discriminator so the same entity can trigger different transitions */
@@ -407,17 +407,24 @@ export function createAutomationWithSteps(input: {
   triggerType: TriggerType;
   conditions?: Condition[];
   steps: { actionType: ActionType; config?: Record<string, unknown>; requiresApproval?: boolean }[];
+  /** Only for `schedule.tick`: how often it should run. */
+  scheduleIntervalMinutes?: number | null;
+  /** Leads-only trigger: how soon after the due date it should fire. */
+  nextRunAt?: string | null;
 }): string {
   const id = newId();
   const now = nowIso();
   tx(() => {
     run(
       `insert into automations (id, organization_id, name, description, trigger_type, conditions, is_active,
-         run_limit_per_day, last_run_at, created_by, created_at, updated_at)
-       values (?,?,?,?,?,?,?,?,?,?,?,?)`,
+         run_limit_per_day, last_run_at, created_by, created_at, updated_at,
+         schedule_interval_minutes, next_run_at)
+       values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id, input.organizationId, input.name, input.description ?? null, input.triggerType,
         JSON.stringify(input.conditions ?? []), 1, 100, null, input.createdBy, now, now,
+        input.scheduleIntervalMinutes ?? null,
+        input.nextRunAt ?? null,
       ]
     );
     input.steps.forEach((step, index) => {

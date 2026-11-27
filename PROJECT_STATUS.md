@@ -15,9 +15,9 @@ asserted — the verification commands and their real output are in `PHASE-3-REP
 | --- | --- | --- |
 | Types | `npx tsc --noEmit` | ✅ clean, strict, 0 `any` |
 | Lint | `npx eslint .` | ✅ 0 errors / 0 warnings |
-| Unit + integration | `npx vitest run` | ✅ 120 passed, 10 skipped |
-| E2E on PostgreSQL | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ 19 passed |
-| E2E on SQLite | `npx playwright test` | ✅ 19 passed |
+| Unit + integration | `npx vitest run` | ✅ 147 passed, 10 skipped |
+| E2E on PostgreSQL | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ 20 passed |
+| E2E on SQLite | `npx playwright test` | ✅ 20 passed |
 | All gates | `npm run verify` (add `-- --e2e` for the suite) | ✅ green |
 | Production build | `npm run build` | ✅ 36 routes |
 | Readiness probe | `GET /api/readiness` | ✅ 200 with provider warnings |
@@ -50,9 +50,9 @@ src/app/                 36 routes (auth, dashboard, leads, customers, proposals
                          approvals, documents, analytics, team/settings, billing, admin, portal,
                          verify-email, forbidden, api/*)
 src/components/          ui primitives + feature forms (client components)
-src/lib/                 db, auth, authz, permissions, plans, notifications, automations, ai,
-                         email, email-verification, storage, stripe, logger, audit, validate, csv,
-                         proposal-math, theme
+src/lib/                 db, auth, authz, permissions, plans, notifications, automations, scheduler,
+                         integrations, ai, ai-usage, email, email-verification, storage, stripe,
+                         logger, audit, validate, csv, proposal-math, theme
 src/middleware.ts        per-request CSP nonce + x-request-id
 src/lib/actions/         every server action, permission-gated
 sql/migrations/          001…005 with up/down variants per engine (005 = RLS, generated)
@@ -60,6 +60,7 @@ sql/rls.postgres.sql     canonical 83 policies; migration 005 is generated from 
 tests/                   vitest: unit, rls.live, rls.postgres, rbac-notifications, email-verification
 e2e/app.spec.ts          Playwright journeys A–G
 scripts/                 db-migrate, build-schema, seed, pg-worker, migrate-pg, backup, restore, verify
+vercel.json              cron: /api/cron/automations every 10 minutes
 docs/                    DEPLOYMENT, DATABASE, BACKUP-AND-RESTORE, TROUBLESHOOTING, DEFINITION-OF-DONE
 ```
 
@@ -94,13 +95,17 @@ before any real deployment.**
    is that every route renders dynamically — static marketing pages are no longer prerendered. If
    that ever matters for edge caching, the alternative is a per-route policy and a maintained
    allowlist of prerendered routes.
-3. Playwright must run the whole file: the suite is serial and resets the database in `beforeAll`,
+3. Time-based automations need `CRON_SECRET` and a scheduler hitting
+   `/api/cron/automations`; event triggers work without it and the page says so.
+4. Dropbox is connected per workspace through OAuth (`DROPBOX_APP_KEY`/`DROPBOX_APP_SECRET`);
+   `DROPBOX_ACCESS_TOKEN` remains a single-tenant fallback. Live OAuth is **BLOCKED** here (no app keys).
+5. Playwright must run the whole file: the suite is serial and resets the database in `beforeAll`,
    so `-g` on a later test will fail on missing seed users by design.
-4. `data/bizpilot.db` is dev-only local state and is safe to delete; migrations recreate it.
-5. Rotate leaked tokens: GitHub `ghp_a5a6…`, Netlify `nfp_7CWU…`.
-6. AI spend is tracked from the provider's own token counts (`src/lib/ai-usage.ts`). Cost stays
+6. `data/bizpilot.db` is dev-only local state and is safe to delete; migrations recreate it.
+7. Rotate leaked tokens: GitHub `ghp_a5a6…`, Netlify `nfp_7CWU…`.
+8. AI spend is tracked from the provider's own token counts (`src/lib/ai-usage.ts`). Cost stays
    "not priced" until `AI_PRICE_INPUT_PER_MTOK` / `AI_PRICE_OUTPUT_PER_MTOK` are set — `/api/readiness`
    warns about exactly that, on purpose.
-7. Backups: `npm run db:backup` / `npm run db:restore` are verified for both engines (see
+9. Backups: `npm run db:backup` / `npm run db:restore` are verified for both engines (see
    `docs/BACKUP-AND-RESTORE.md`), but nothing schedules them — production needs a cron entry or the
    provider's own snapshots.

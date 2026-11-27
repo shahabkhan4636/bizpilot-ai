@@ -80,3 +80,26 @@ public token path.
 Live Stripe, Resend, AI, Dropbox and the Vercel deploy itself are **unverified** in this workspace
 because the keys are absent. `PROJECT_STATUS.md` keeps the list. Do not mark them done until the
 checks in section 4 return real data.
+
+## 8. Scheduler (time-based automations)
+
+Event triggers fire immediately from the code path that changed the record. Two trigger types cannot:
+**"on a schedule"** and **"follow-up overdue"**. They are driven by one authenticated route:
+
+```bash
+# what Vercel Cron sends when CRON_SECRET is set
+curl -H "Authorization: Bearer $CRON_SECRET" https://YOUR_DOMAIN/api/cron/automations
+# dry run: reports what would run, changes nothing
+curl -H "Authorization: Bearer $CRON_SECRET" "https://YOUR_DOMAIN/api/cron/automations?dryRun=1"
+```
+
+- Set `CRON_SECRET` (`openssl rand -base64 32`). **Without it the route returns 503 instead of running
+  unauthenticated** — it can dispatch emails and AI calls for every workspace, so it must never be open.
+- `vercel.json` registers `*/10 * * * *`. Any other host: point a crontab at the same URL.
+- A wrong or missing token is a `401`. The `x-cron-secret` header is also accepted for schedulers that
+  cannot set an `Authorization` header.
+- Each due automation is claimed with a conditional update, so two overlapping runs cannot both fire
+  it, and overdue follow-ups de-duplicate per lead per due date.
+- `/automations` shows the next scheduled run and the overdue count, and warns on the page when
+  `CRON_SECRET` is missing rather than leaving silent non-firing automations.
+- `/api/readiness` reports `providers.scheduler`.

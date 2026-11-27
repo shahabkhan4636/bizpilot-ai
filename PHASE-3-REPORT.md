@@ -208,3 +208,60 @@ Three more defects surfaced by the same run:
 
 Finally, `tests/ai-usage.test.ts` (5 cases) pins the accounting: pricing maths, unpriced-is-not-zero,
 per-model totals, and that one workspace can never read another's spend.
+
+## 8. Third pass — the two features that were documented but not built
+
+Re-reading the master prompt against the code (not against my notes) turned up two things that
+existed on paper only:
+
+### a) Scheduled triggers — missing entirely
+
+Every trigger was an *event*; nothing could fire on a clock, and the advertised
+`followup.overdue` trigger was in the builder's dropdown but **never dispatched by anything**. A user
+could create that automation and wait forever.
+
+Implemented (`src/lib/scheduler.ts`, `GET|POST /api/cron/automations`, `vercel.json` cron at
+`*/10 * * * *`):
+
+- new `schedule.tick` trigger with a per-automation interval (5 min … 30 days), set in the builder;
+- the scheduler claims each due automation with a conditional `update … where next_run_at = ?`, so two
+  overlapping runs cannot both fire it, and advances `next_run_at` in the same statement;
+- `followup.overdue` now genuinely fires: leads past `next_follow_up_at`, not `won`/`lost`, with the
+  due *date* as the dedupe suffix — so a lead that stays overdue nudges once, not on every tick;
+- the route is authenticated with `CRON_SECRET` and **returns 503 rather than running
+  unauthenticated**, because it can send email and call AI for every workspace; `?dryRun=1` reports
+  without changing anything;
+- the automations page shows the next scheduled run, the overdue count, and warns when `CRON_SECRET`
+  is missing instead of silently doing nothing.
+
+Tests: `tests/scheduler.test.ts` (9) + `tests/cron.test.ts` (5) — fires once per window, fires again
+in the next window, paused automations do not fire, dry run writes nothing, the daily run limit
+applies, overdue de-duplicates per due date, closed leads are ignored, one workspace's tick never
+touches another's leads, 503/401/200 on the route, and `x-cron-secret` accepted.
+
+### b) Dropbox OAuth — a dead documented path
+
+The README told you to add the redirect URI `/api/integrations/dropbox/callback` and exchange a code
+yourself; that route did not exist, and storage used one global `DROPBOX_ACCESS_TOKEN`, meaning every
+customer's files landed in one Dropbox account.
+
+Implemented:
+
+- `src/lib/integrations.ts` — HMAC-signed, 10-minute `state`; code exchange with a refresh token;
+  `dropboxAccessTokenFor(orgId)` that refreshes when the token is about to expire; per-workspace
+  credential storage in the new `integration_credentials` table (migration 006);
+- `/api/integrations/dropbox/start` and `/callback` — both require a session and
+  `settings:workspace`, reject a state signed for a different workspace/user, and put the real reason
+  in the redirect (`exchange_failed&reason=…`) instead of a generic error;
+- uploads now prefer the workspace's own connection, fall back to the deployment token, and finally to
+  local disk; the documents page says which is active and shows a **Connect Dropbox** button only to
+  owners/admins when the app keys exist.
+
+Tests: `tests/integrations.test.ts` (13) against a real HTTP double — state round trip, tampered state
+rejected, expiry, authorize URL asks for `offline`, exchange success/failure/not-configured,
+per-workspace isolation, reconnect updates instead of duplicating, expired-token refresh, disconnect.
+
+### Also fixed here
+
+The e2e suite's last test failed on its 21st login: login is rate limited to 20 per 10 minutes **by
+design**, so the test now signs up its own user instead of leaning on the limiter's budget.
