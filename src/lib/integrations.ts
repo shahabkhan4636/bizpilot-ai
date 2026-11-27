@@ -1,3 +1,4 @@
+import { appUrl } from "@/lib/app-url";
 import crypto from "node:crypto";
 import { get, run } from "@/lib/db";
 import { newId } from "@/lib/ids";
@@ -36,7 +37,7 @@ export function dropboxAppConfigured(): boolean {
 export function redirectUri(): string {
   return (
     (process.env.DROPBOX_REDIRECT_URI ?? "").trim() ||
-    `${(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/+$/, "")}/api/integrations/dropbox/callback`
+    `${appUrl()}/api/integrations/dropbox/callback`
   );
 }
 

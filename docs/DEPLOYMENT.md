@@ -81,6 +81,30 @@ Live Stripe, Resend, AI, Dropbox and the Vercel deploy itself are **unverified**
 because the keys are absent. `PROJECT_STATUS.md` keeps the list. Do not mark them done until the
 checks in section 4 return real data.
 
+
+### Vercel plan, cron frequency and the one thing that blocks a deploy
+
+`vercel.json` ships a **daily** cron (`0 7 * * *`) on purpose. Vercel's Hobby plan rejects any
+sub-daily schedule at deploy time ("Hobby accounts are limited to daily Cron Jobs"), so a `*/10`
+expression fails the deployment outright instead of merely running less often — the worst outcome,
+because it looks like a code problem.
+
+| Plan | Cron | Commercial use |
+| --- | --- | --- |
+| Hobby (free) | one invocation per day, timing only guaranteed inside the hour | **not permitted** by Vercel's fair-use guidelines |
+| Pro ($20/mo) | any expression, e.g. `*/10 * * * *` | permitted |
+
+If you are going to charge customers, you need Pro anyway. On Pro, promote the faster schedule:
+
+```bash
+cp vercel.pro.json vercel.json && git commit -am "run the scheduler every 10 minutes" && git push
+```
+
+Alternative that keeps Hobby (non-commercial projects only): leave the daily cron in place and point an
+external scheduler (cron-job.org, Better Stack, a VPS crontab) at
+`https://<your-domain>/api/cron/automations` every 10 minutes with `Authorization: Bearer $CRON_SECRET`
+— the route does not care who calls it, only that the secret matches.
+
 ## 8. Scheduler (time-based automations)
 
 Event triggers fire immediately from the code path that changed the record. Two trigger types cannot:

@@ -257,3 +257,36 @@ describe("readiness probe tells the truth about the schema", () => {
     expect(JSON.stringify(body)).not.toMatch(/sk_(test|live)_|re_[A-Za-z0-9]{8}/);
   });
 });
+
+describe("public base URL resolution", () => {
+  it("prefers an explicit variable and strips its trailing slash", async () => {
+    const { appUrl } = await import("@/lib/app-url");
+    process.env.NEXT_PUBLIC_APP_URL = "https://bizpilot.example/";
+    delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+    expect(appUrl()).toBe("https://bizpilot.example");
+  });
+
+  it("falls back to Vercel's own host so a deploy is correct without configuration", async () => {
+    vi.resetModules();
+    delete process.env.NEXT_PUBLIC_APP_URL;
+    process.env.VERCEL_PROJECT_PRODUCTION_URL = "bizpilot-ai.vercel.app";
+    const { appUrl } = await import("@/lib/app-url");
+    expect(appUrl()).toBe("https://bizpilot-ai.vercel.app");
+
+    vi.resetModules();
+    delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+    process.env.VERCEL_URL = "bizpilot-preview-123.vercel.app";
+    const preview = await import("@/lib/app-url");
+    expect(preview.appUrl()).toBe("https://bizpilot-preview-123.vercel.app");
+    delete process.env.VERCEL_URL;
+  });
+
+  it("uses localhost when nothing is set", async () => {
+    vi.resetModules();
+    delete process.env.NEXT_PUBLIC_APP_URL;
+    delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+    delete process.env.VERCEL_URL;
+    const { appUrl } = await import("@/lib/app-url");
+    expect(appUrl()).toBe("http://localhost:3000");
+  });
+});

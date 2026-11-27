@@ -1,3 +1,4 @@
+import { appUrl as appUrlBase } from "@/lib/app-url";
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
@@ -15,7 +16,7 @@ import { logger } from "@/lib/logger";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/+$/, "");
+  const appUrl = appUrlBase();
   const back = (query: string) => NextResponse.redirect(`${appUrl}/documents?${query}`, { status: 303 });
 
   let ctx;

@@ -1,3 +1,4 @@
+import { appUrl } from "@/lib/app-url";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -42,7 +43,7 @@ export default async function ProposalDetailPage({ params }: { params: Promise<{
   const leads = all<{ id: string; name: string }>("select id, name from leads where organization_id = ? and deleted_at is null order by created_at desc limit 200", [orgId]);
 
   const taxPercent = proposal.subtotal_cents > 0 ? Math.round((proposal.tax_cents / proposal.subtotal_cents) * 10000) / 100 : 0;
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+  const baseUrl = appUrl();
   const shareUrl = proposal.share_token ? `${baseUrl}/p/${proposal.share_token}` : null;
 
   return (

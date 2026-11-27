@@ -113,6 +113,9 @@ To get an admin panel, set `ADMIN_EMAIL` in `.env.local` **before** signing up w
 | `docs/DATABASE.md` | migrations, engines, RLS, `--baseline` |
 | `docs/BACKUP-AND-RESTORE.md` | taking or restoring a backup |
 | `docs/TROUBLESHOOTING.md` | something is broken and `/api/readiness` is the first clue |
+| `docs/LAUNCH-RUNBOOK.md` | taking it live: database, deploy, env vars, Stripe, domain, go-live checks |
+| `marketing/LAUNCH-KIT.md` | landing copy, pricing, cold outreach scripts, demo script, objections |
+| `marketing/FIRST-10-CUSTOMERS.md` | the 14-day plan to the first ten paying workspaces (+ `lead-tracker.csv`) |
 | `PHASE-REPORT.md`, `PHASE-2-REPORT.md`, `PHASE-3-REPORT.md` | the audit trail of what changed, and what each phase proved |
 
 ## 5. Environment variables

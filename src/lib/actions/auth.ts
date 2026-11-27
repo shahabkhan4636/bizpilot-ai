@@ -1,5 +1,6 @@
 "use server";
 
+import { appUrl } from "@/lib/app-url";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { createHash } from "node:crypto";
@@ -149,7 +150,7 @@ export async function requestPasswordResetAction(_prev: ActionState, form: FormD
       "insert into password_resets (id, user_id, token_hash, expires_at, created_at) values (?,?,?,?,?)",
       [newId(), user.id, sha256(token), addDays(1).toISOString(), nowIso()]
     );
-    const base = (await headers()).get("origin") ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const base = (await headers()).get("origin") ?? appUrl();
     const link = `${base}/reset-password?token=${token}`;
 
     const sent = await sendEmail({

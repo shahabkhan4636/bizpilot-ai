@@ -1,10 +1,11 @@
+import { appUrl } from "@/lib/app-url";
 import type { Metadata } from "next";
 import "./globals.css";
 import { headers } from "next/headers";
 import { THEME_BOOTSTRAP } from "@/lib/theme";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
+  metadataBase: new URL(appUrl()),
   title: {
     default: "BizPilot AI — AI business automation for small teams",
     template: "%s · BizPilot AI",
