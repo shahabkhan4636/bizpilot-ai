@@ -21,7 +21,59 @@ Without all three the app deploys but cannot take money. Everything else in this
 
 ---
 
-## 1. Database (5 minutes, free tier is fine to start)
+## 1. Database — **DONE on Supabase** (project `bizpilot`, ref `mpzuknincvfrfrvanpio`)
+
+The production database exists and is migrated. What was applied, verified by querying it:
+
+| Check | Result |
+| --- | --- |
+| Public tables | **29** (same as a migrated SQLite dev database) |
+| Migrations recorded | **6** — 001, 002, 003, 004, 006, 007 |
+| Plan catalogue | **4 plans** (Starter/Professional/Business/Agency) |
+| Migration 005 (RLS policies) | **deliberately not applied** — see below |
+| Postgres version | 17.12, region `us-east-1` (matches the Vercel `iad1` region) |
+
+**Why 005 was skipped — read this, it matters.** Migration 005 starts with
+`create or replace function auth.uid()`. On a self-hosted Postgres that is correct; on Supabase that
+function belongs to Supabase Auth and the connecting role does not own it, so applying it either fails or
+silently replaces Supabase's own auth helper. So on Supabase the policies are skipped and tenant isolation
+rests on the application layer, which is where it actually lives: every query in `src/lib/*` filters by
+`organization_id`, and the e2e suite proves one workspace cannot read another's rows. If you want the
+second lock as well, run `sql/rls.postgres.sql` **without** the `auth` function block, as a database owner.
+
+The runner now supports this honestly — a skipped migration is printed as `SKIPPED` and never recorded as
+applied:
+
+```bash
+MIGRATION_SKIP=005 DATABASE_URL="postgres://…" BIZPILOT_ENGINE=postgres npm run db:migrate:status
+#  001  applied  3da9f02812816002  001_initial
+#  005  SKIPPED  028de6dcafee4d99  005_row_level_security
+#  6 applied · 0 pending · 1 skipped
+```
+
+### The connection string you must paste (one click, do not guess it)
+
+Supabase dashboard → project `bizpilot` → **Connect** → **Session pooler** → copy the URI. It looks like
+
+```
+postgresql://postgres.mpozuknincvfrfrvanpio:<password>@aws-0-us-east-1.pooler.supabase.com:5432/postgres
+```
+
+- The **database password** was generated when the project was created: `favEkwg9YbsONfUSFoLoERQjAa9z`
+  (change it under Settings → Database → Reset password if you prefer your own; then update this).
+- Use the **Session pooler (port 5432)**, not the transaction pooler (6543): the app's `pg` driver issues
+  multi-statement transactions, which transaction-mode pooling does not keep together.
+- Add `?sslmode=require` if your copy drops it.
+- Do not guess the host: the pooler hostname is region-specific, and a wrong one produces "tenant/user not
+  found" — which looks like a code bug and is not one.
+
+Once you have it, either paste it here (I will set it in Vercel) or add it yourself as `DATABASE_URL`.
+
+---
+
+## 1b. Original database instructions (Neon or your own Postgres)
+
+If you ever move off Supabase, this is the path.
 
 1. Create a project at **neon.tech** (or supabase.com). Region: pick the one closest to your customers
    (`aws-us-east-1` matches the app's `iad1` region).

@@ -32,7 +32,16 @@ node scripts/db-migrate.mjs --status      # what is applied / pending
 node scripts/db-migrate.mjs --down 1      # roll back one migration
 node scripts/db-migrate.mjs --to 002      # roll back to a specific id
 node scripts/db-migrate.mjs --baseline    # mark all applied on a DB created from the snapshot
+
+# Hosts that own the `auth` schema (Supabase) must not receive migration 005:
+MIGRATION_SKIP=005 npm run db:migrate      # 005 is reported SKIPPED and never recorded
 ```
+
+`MIGRATION_SKIP` exists because `005_row_level_security` begins with
+`create or replace function auth.uid()`. That is right for a self-hosted Postgres and wrong on Supabase,
+where the function belongs to Supabase Auth. A skipped migration is shown as `SKIPPED` in `--status` and
+never written to `schema_migrations`, so the bookkeeping stays true instead of claiming work that was not
+done.
 
 Rules:
 

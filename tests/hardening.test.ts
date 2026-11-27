@@ -290,3 +290,36 @@ describe("public base URL resolution", () => {
     expect(appUrl()).toBe("http://localhost:3000");
   });
 });
+
+describe("MIGRATION_SKIP keeps the bookkeeping honest", () => {
+  it("reports a skipped migration as SKIPPED and never records it as applied", async () => {
+    const { execFileSync } = await import("node:child_process");
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const dbFile = path.join(os.tmpdir(), `skip-${Date.now()}.db`);
+
+    const run = (args: string[], env: Record<string, string> = {}) =>
+      execFileSync("node", ["scripts/db-migrate.mjs", ...args], {
+        cwd: process.cwd(),
+        env: { ...process.env, BIZPILOT_DB_FILE: dbFile, DATABASE_URL: "", ...env },
+        encoding: "utf8",
+      });
+
+    // Fresh database, 005 skipped: the runner must apply the other six and record
+    // only those six — no invented row, no "applied" for work it did not do.
+    const out = run([], { MIGRATION_SKIP: "005" });
+    expect(out).toMatch(/6 migration\(s\) applied/);
+
+    const status = run(["--status"], { MIGRATION_SKIP: "005" });
+    expect(status).toMatch(/005\s+SKIPPED/);
+    expect(status).toMatch(/6 applied · 0 pending · 1 skipped/);
+
+    const Database = (await import("better-sqlite3")).default;
+    const db = new Database(dbFile, { readonly: true });
+    const ids = (db.prepare("select id from schema_migrations order by id").all() as { id: string }[]).map((r) => r.id);
+    db.close();
+    expect(ids).toEqual(["001", "002", "003", "004", "006", "007"]);
+    fs.unlinkSync(dbFile);
+  }, 60_000);
+});

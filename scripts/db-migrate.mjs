@@ -143,6 +143,25 @@ if (usePostgres) {
 console.log(`→ engine=${driver.engine} target=${driver.label}`);
 await driver.exec(BOOKKEEPING);
 
+/**
+ * Migrations this host must not apply.
+ *
+ * `MIGRATION_SKIP=005` exists because migration 005 does `create or replace function
+ * auth.uid()` — correct for a self-hosted Postgres, destructive on Supabase, where that
+ * function belongs to Supabase Auth and the connecting role does not own it. Without a
+ * skip list the only options are "apply something that breaks the host" or "record a lie
+ * in schema_migrations". A skipped migration is reported as SKIPPED and never recorded,
+ * so `--status` keeps telling the truth.
+ */
+const SKIP = new Set(
+  (process.env.MIGRATION_SKIP ?? "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .map((v) => v.padStart(3, "0"))
+);
+if (SKIP.size > 0) console.log(`→ skipping: ${[...SKIP].join(", ")} (from MIGRATION_SKIP)`);
+
 const applied = (await driver.query("select id, name, checksum, applied_at from schema_migrations order by id")).rows;
 const byId = new Map(applied.map((r) => [r.id, r]));
 
@@ -211,9 +230,13 @@ if (status) {
   console.log("\n id   state    checksum          name");
   for (const m of migrations) {
     const row = byId.get(m.id);
-    console.log(` ${m.id}  ${row ? "applied" : "pending"}  ${m.checksum}  ${m.name}`);
+    const state = row ? "applied" : SKIP.has(m.id) ? "SKIPPED" : "pending";
+    console.log(` ${m.id}  ${state.padEnd(7)}  ${m.checksum}  ${m.name}`);
   }
-  console.log(`\n${applied.length} applied · ${migrations.length - applied.length} pending\n`);
+  const skipped = migrations.filter((m) => !byId.has(m.id) && SKIP.has(m.id)).length;
+  console.log(
+    `\n${applied.length} applied · ${migrations.length - applied.length - skipped} pending · ${skipped} skipped\n`
+  );
   await driver.close();
   process.exit(0);
 }
@@ -251,7 +274,9 @@ if (downIndex >= 0) {
 }
 
 const limit = toIndex >= 0 ? String(args[toIndex + 1] ?? "") : null;
-const pending = migrations.filter((m) => !byId.has(m.id) && (!limit || m.id <= limit));
+const pending = migrations.filter(
+  (m) => !byId.has(m.id) && !SKIP.has(m.id) && (!limit || m.id <= limit)
+);
 
 if (pending.length === 0) {
   console.log(`✔ up to date (${applied.length} migration(s) applied)`);
