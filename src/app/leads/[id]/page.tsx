@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { NoteForm, ScoreLeadButton, UpdateLeadForm, AssignForm } from "@/components/leads/lead-forms";
 import { listMembers, deleteLeadAction } from "@/lib/actions/leads";
+import { convertLeadToCustomerAction } from "@/lib/actions/customers";
 import { all, get } from "@/lib/db";
 import { formatMoney, formatDate, relativeTime } from "@/lib/utils";
 import { LEAD_STATUS_LABEL, type LeadStatus } from "@/lib/csv";
@@ -23,6 +24,7 @@ type Lead = {
   status: LeadStatus; source: string; value_cents: number; notes: string | null;
   ai_score: number | null; ai_score_reason: string | null; ai_next_action: string | null; ai_scored_at: string | null;
   next_follow_up_at: string | null; created_at: string; assigned_to: string | null; owner_name: string | null;
+  customer_id: string | null;
 };
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -78,6 +80,16 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           <>
             <Link href={`/proposals/new?lead=${lead.id}`}><Button size="sm" variant="outline">Create proposal</Button></Link>
             <Link href={`/ai-assistant?lead=${lead.id}`}><Button size="sm" variant="outline">Draft message</Button></Link>
+            {lead.customer_id ? (
+              <Link href={`/customers/${lead.customer_id}`}>
+                <Button size="sm" variant="outline">View customer</Button>
+              </Link>
+            ) : (
+              <form action={convertLeadToCustomerAction}>
+                <input type="hidden" name="lead_id" value={lead.id} />
+                <Button size="sm" variant="outline" type="submit">Convert to customer</Button>
+              </form>
+            )}
             <form action={deleteLeadAction}>
               <input type="hidden" name="lead_id" value={lead.id} />
               <Button size="sm" variant="danger" type="submit"><Trash2 className="h-4 w-4" /> Delete</Button>

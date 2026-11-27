@@ -21,6 +21,11 @@ sql/migrations/003_role_permissions.up.postgres.sql   engine-specific (table reb
 sql/migrations/003_role_permissions.up.sqlite.sql
 ```
 
+A fresh database can also be created straight from the generated snapshot with `node scripts/migrate.mjs`.
+That script now **refuses** to run against a database that already has tables — the snapshot contains
+`alter table … add column` statements, so replaying it on a live database half-applies and dies with
+"duplicate column name". It prints the two commands that are correct instead.
+
 ```bash
 npm run db:migrate                       # apply everything pending
 node scripts/db-migrate.mjs --status      # what is applied / pending
@@ -70,6 +75,7 @@ All policies are keyed on the caller's organisation membership. It is defence in
 | 004 | widen `org_invites.role` so manager/viewer invitations are accepted |
 | 005 | row-level security (generated from `sql/rls.postgres.sql`) |
 | 006 | scheduled automations (`schedule_interval_minutes`, `next_run_at`) + `integration_credentials` |
+| 007 | proposal responses: `accepted_by_name`, `rejected_reason` (who signed, and why not) |
 
 ## Plan catalogue
 

@@ -31,12 +31,6 @@ export function formatDate(value?: string | null): string {
   return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
-export function formatDateTime(value?: string | null): string {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
 
 export function relativeTime(value?: string | null): string {
   if (!value) return "—";
@@ -63,15 +57,6 @@ export function slugify(input: string): string {
     .slice(0, 48) || "workspace";
 }
 
-export function initials(name?: string | null): string {
-  if (!name) return "?";
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]!.toUpperCase())
-    .join("");
-}
 
 export function percent(part: number, total: number): number {
   if (!total) return 0;

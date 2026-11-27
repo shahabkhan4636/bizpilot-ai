@@ -9,7 +9,7 @@ import { addDays, nowIso, slugify } from "@/lib/utils";
 import { hashPassword, verifyPassword, passwordProblems } from "@/lib/password";
 import { createSession, setSessionCookie, clearSessionCookie } from "@/lib/session";
 import { audit } from "@/lib/audit";
-import { rateLimit } from "@/lib/ratelimit";
+import { rateLimit, LOGIN_LIMIT, LOGIN_WINDOW_SECONDS, SIGNUP_LIMIT, SIGNUP_WINDOW_SECONDS } from "@/lib/ratelimit";
 import { sendEmail, isEmailConfigured } from "@/lib/email";
 import { ValidationError, str, email as emailField } from "@/lib/validate";
 import { DEFAULT_PLAN_CODE } from "@/lib/plans";
@@ -37,7 +37,7 @@ function fail(e: unknown): ActionState {
 export async function signupAction(_prev: ActionState, form: FormData): Promise<ActionState> {
   let createdUserId: string | null = null;
   try {
-    const limit = rateLimit(await clientKey("signup"), 10, 3600);
+    const limit = rateLimit(await clientKey("signup"), SIGNUP_LIMIT, SIGNUP_WINDOW_SECONDS);
     if (!limit.allowed) return { error: `Too many sign-up attempts. Try again in ${Math.ceil(limit.resetInSeconds / 60)} minutes.` };
 
     const fullName = str(form.get("fullName"), "Full name", { min: 2, max: 120 });
@@ -100,7 +100,7 @@ export async function signupAction(_prev: ActionState, form: FormData): Promise<
 
 export async function loginAction(_prev: ActionState, form: FormData): Promise<ActionState> {
   try {
-    const limit = rateLimit(await clientKey("login"), 20, 600);
+    const limit = rateLimit(await clientKey("login"), LOGIN_LIMIT, LOGIN_WINDOW_SECONDS);
     if (!limit.allowed) return { error: `Too many login attempts. Try again in ${Math.ceil(limit.resetInSeconds / 60)} minutes.` };
 
     const email = emailField(form.get("email")).toLowerCase();

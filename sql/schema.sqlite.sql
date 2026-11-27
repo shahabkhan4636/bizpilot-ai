@@ -1,6 +1,6 @@
 -- BizPilot AI — consolidated schema snapshot (GENERATED FILE)
 -- Source of truth: sql/migrations/*.up.sql. Regenerate with: npm run db:schema
--- 6 migration(s): 001_initial.up.sql, 002_roles_crm_notifications.up.sql, 003_role_permissions.up.sqlite.sql, 004_widen_invite_roles.up.sqlite.sql, 005_row_level_security.up.sqlite.sql, 006_scheduled_automations.up.sql
+-- 7 migration(s): 001_initial.up.sql, 002_roles_crm_notifications.up.sql, 003_role_permissions.up.sqlite.sql, 004_widen_invite_roles.up.sqlite.sql, 005_row_level_security.up.sqlite.sql, 006_scheduled_automations.up.sql, 007_proposal_responses.up.sql
 --
 -- Portable SQL: this exact file is applied to SQLite and to PostgreSQL, so the
 -- two deployments cannot diverge. Tenant isolation is enforced in application
@@ -447,3 +447,14 @@ create table if not exists integration_credentials (
   constraint integration_credentials_unique unique (organization_id, provider)
 );
 create index if not exists integration_credentials_org_idx on integration_credentials (organization_id);
+
+-- ===== 007_proposal_responses.up.sql =====
+-- 007 — Record *who* accepted or declined a public proposal.
+--
+-- Acceptance used to write only a status and a timestamp: the client's name went
+-- into the activity log and nowhere else, so a proposal page could not show who
+-- signed off. Declines had the same problem with the reason the client typed.
+-- Both are needed for a real audit trail, so store them on the row.
+
+alter table proposals add column accepted_by_name text;
+alter table proposals add column rejected_reason text;

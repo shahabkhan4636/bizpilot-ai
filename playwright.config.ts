@@ -34,6 +34,11 @@ export default defineConfig({
       // shell before `npx playwright test` and the whole suite runs against the
       // real database instead of the SQLite file.
       ...(process.env.DATABASE_URL ? {} : { BIZPILOT_DB_FILE: "data/e2e.db" }),
+      // The suite signs up one workspace per scenario, all from 127.0.0.1, so the
+      // production signup/login ceilings (10/hour, 20/10min per IP) would throttle
+      // the tests themselves. Raised here only — the app defaults are unchanged.
+      SIGNUP_RATE_LIMIT: "1000",
+      LOGIN_RATE_LIMIT: "1000",
       NEXT_PUBLIC_APP_URL: `http://127.0.0.1:${PORT}`,
     },
   },

@@ -40,9 +40,20 @@ export function int(value: FormDataEntryValue | null | undefined, field: string,
   return n;
 }
 
+/**
+ * Parses a currency amount into integer cents.
+ *
+ * Deliberately strict about the *shape* after removing `$` and thousands
+ * separators: plain decimal only. `Number()` alone would happily accept `0x10`
+ * (hex → $16) and `1e3` (scientific → $1,000), which are not amounts anyone typed
+ * on purpose and are a fine way to slip a wrong total past a reviewer.
+ */
 export function money(value: FormDataEntryValue | null | undefined, field: string): number {
-  const raw = typeof value === "string" ? value.trim().replace(/[$,]/g, "") : "";
+  const raw = typeof value === "string" ? value.trim().replace(/[$,\s]/g, "") : "";
   if (!raw) return 0;
+  if (!/^\d+(?:\.\d+)?$/.test(raw)) {
+    throw new ValidationError(`${field} must be a number, for example 1200 or 1200.50`);
+  }
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0) throw new ValidationError(`${field} must be a positive amount`);
   if (n > 10_000_000) throw new ValidationError(`${field} is too large`);

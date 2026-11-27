@@ -10,7 +10,9 @@ import { UploadDocumentForm, DeleteDocumentButton } from "@/components/documents
 import { all, get } from "@/lib/db";
 import { dropboxAppConfigured, getCredential } from "@/lib/integrations";
 import { buttonVariants } from "@/components/ui/button";
-import { HardDrive } from "lucide-react";
+import { Download, HardDrive } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { disconnectDropboxAction } from "@/lib/actions/documents";
 import { formatDate } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Documents", robots: { index: false } };
@@ -76,18 +78,22 @@ export default async function DocumentsPage({
       {connectResult ? (
         <div className="mb-4">
           <Alert
-            tone={connectResult === "connected" ? "success" : "danger"}
+            tone={connectResult === "connected" ? "success" : connectResult === "disconnected" ? "info" : "danger"}
             title={
               connectResult === "connected"
                 ? "Dropbox connected"
-                : connectResult === "forbidden"
-                  ? "Only a workspace owner or admin can connect Dropbox"
-                  : "Dropbox was not connected"
+                : connectResult === "disconnected"
+                  ? "Dropbox disconnected"
+                  : connectResult === "forbidden"
+                    ? "Only a workspace owner or admin can change Dropbox"
+                    : "Dropbox was not connected"
             }
           >
             {connectResult === "connected"
               ? "New uploads are stored in this workspace's Dropbox account."
-              : `Reason: ${connectResult.replace(/_/g, " ")}${sp.reason ? ` — ${sp.reason}` : ""}`}
+              : connectResult === "disconnected"
+                ? "New uploads are stored locally again. Files already in Dropbox stay there."
+                : `Reason: ${connectResult.replace(/_/g, " ")}${sp.reason ? ` — ${sp.reason}` : ""}`}
           </Alert>
         </div>
       ) : null}
@@ -111,6 +117,18 @@ export default async function DocumentsPage({
               </a>
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {connected && canConnect ? (
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <form action={disconnectDropboxAction}>
+            <Button type="submit" size="sm" variant="outline">Disconnect Dropbox</Button>
+          </form>
+          <p className="text-xs text-[hsl(var(--fg-muted))]">
+            Files already in Dropbox stay in your account but can no longer be downloaded from here until you
+            reconnect.
+          </p>
         </div>
       ) : null}
 
@@ -146,7 +164,18 @@ export default async function DocumentsPage({
                     <TD><Badge tone={d.storage_provider === "dropbox" ? "brand" : "neutral"}>{d.storage_provider}</Badge></TD>
                     <TD className="text-right tabular-nums">{Math.max(1, Math.round(d.size_bytes / 1024))} KB</TD>
                     <TD className="text-[hsl(var(--fg-muted))]">{formatDate(d.created_at)}</TD>
-                    <TD><DeleteDocumentButton documentId={d.id} /></TD>
+                    <TD>
+                      <div className="flex items-center justify-end gap-2">
+                        <a
+                          href={`/api/documents/${d.id}/download`}
+                          className={buttonVariants({ size: "sm", variant: "outline" })}
+                          aria-label={`Download ${d.file_name}`}
+                        >
+                          <Download className="h-4 w-4" /> Download
+                        </a>
+                        <DeleteDocumentButton documentId={d.id} />
+                      </div>
+                    </TD>
                   </TR>
                 ))}
               </TBody>

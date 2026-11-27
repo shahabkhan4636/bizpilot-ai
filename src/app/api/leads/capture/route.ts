@@ -6,6 +6,7 @@ import { checkLeadLimit, recordUsage } from "@/lib/plans";
 import { rateLimit } from "@/lib/ratelimit";
 import { logActivity, audit } from "@/lib/audit";
 import { dispatchTrigger } from "@/lib/automations";
+import { secureCompare } from "@/lib/crypto";
 
 /**
  * Public lead capture endpoint.
@@ -49,15 +50,35 @@ export async function POST(request: Request) {
   }
 
   const providedKey = request.headers.get("x-capture-key") ?? "";
-  if (providedKey !== configuredKey) {
+  if (!providedKey || !secureCompare(providedKey, configuredKey)) {
     return NextResponse.json({ ok: false, error: "Invalid capture key." }, { status: 401, headers: cors() });
   }
 
   const contentType = request.headers.get("content-type") ?? "";
+  const MAX_BODY_BYTES = 64 * 1024;
+  const declaredLength = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+    return NextResponse.json(
+      { ok: false, error: "Submission is too large (64 KB maximum)." },
+      { status: 413, headers: cors() }
+    );
+  }
+
   let payload: Record<string, string> = {};
   try {
     if (contentType.includes("application/json")) {
-      const json = (await request.json()) as Record<string, unknown>;
+      // Read the bytes first: `request.json()` would happily parse a 100 MB body.
+      const text = await request.text();
+      if (Buffer.byteLength(text, "utf8") > MAX_BODY_BYTES) {
+        return NextResponse.json(
+          { ok: false, error: "Submission is too large (64 KB maximum)." },
+          { status: 413, headers: cors() }
+        );
+      }
+      const json = JSON.parse(text) as Record<string, unknown>;
+      if (json === null || typeof json !== "object" || Array.isArray(json)) {
+        return NextResponse.json({ ok: false, error: "Expected a JSON object." }, { status: 400, headers: cors() });
+      }
       payload = Object.fromEntries(Object.entries(json).map(([k, v]) => [k, v == null ? "" : String(v)]));
     } else {
       const form = await request.formData();

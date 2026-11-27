@@ -298,7 +298,16 @@ export async function acceptProposalAction(_prev: ProposalState, form: FormData)
     }
 
     const now = nowIso();
-    run("update proposals set status = 'accepted', accepted_at = ?, updated_at = ? where id = ?", [now, now, proposal.id]);
+    // Conditional on the current status: two clicks (or a double-submitted form)
+    // must not both "succeed" and overwrite the first signatory's name.
+    const changed = run(
+      `update proposals set status = 'accepted', accepted_at = ?, accepted_by_name = ?, updated_at = ?
+        where id = ? and status in ('sent','draft','expired')`,
+      [now, name, now, proposal.id]
+    );
+    if (changed.changes === 0) {
+      return { notice: "This proposal has already been answered. Thank you!" };
+    }
     logActivity({
       organizationId: proposal.organization_id, actorId: null, entityType: "proposal", entityId: proposal.id,
       action: "proposal.accepted", summary: `Client "${name}" accepted "${proposal.title}"`,
@@ -336,12 +345,30 @@ export async function declineProposalAction(_prev: ProposalState, form: FormData
     if (proposal.status === "accepted") return { error: "This proposal was already accepted — contact us if that was a mistake." };
 
     const now = nowIso();
-    run("update proposals set status = 'rejected', rejected_at = ?, updated_at = ? where id = ?", [now, now, proposal.id]);
+    const changed = run(
+      `update proposals set status = 'rejected', rejected_at = ?, rejected_reason = ?, updated_at = ?
+        where id = ? and status in ('sent','draft','expired')`,
+      [now, reason, now, proposal.id]
+    );
+    if (changed.changes === 0) return { error: "This proposal has already been answered." };
     logActivity({
       organizationId: proposal.organization_id, actorId: null, entityType: "proposal", entityId: proposal.id,
       action: "proposal.rejected", summary: `Proposal declined${reason ? `: ${reason}` : ""}`,
     });
-    audit({ organizationId: proposal.organization_id, action: "proposal.rejected_public", targetType: "proposal", targetId: proposal.id });
+    audit({ organizationId: proposal.organization_id, action: "proposal.rejected_public", targetType: "proposal", targetId: proposal.id, metadata: { reason } });
+    notify({
+      organizationId: proposal.organization_id,
+      type: "proposal.declined",
+      level: "warning",
+      title: `Proposal declined: ${proposal.title}`,
+      body: reason ? `Reason: ${reason}` : "No reason given.",
+      href: `/proposals/${proposal.id}`,
+    });
+    try {
+      await dispatchTrigger(proposal.organization_id, "proposal.rejected", {
+        type: "proposal", id: proposal.id, data: { id: proposal.id, reason: reason ?? "" },
+      });
+    } catch { /* non-fatal */ }
   } catch (e) {
     return handle(e);
   }

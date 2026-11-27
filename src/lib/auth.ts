@@ -67,11 +67,3 @@ export function isAdmin(role: string): boolean {
   return role === "owner" || role === "admin";
 }
 
-/** Guard for destructive actions. Server-side, never trust the UI. */
-export async function requireAdmin(): Promise<AuthContext> {
-  const ctx = await requireAuth();
-  if (!isAdmin(ctx.membership.role)) {
-    throw new Error("You need owner or admin permissions for this action.");
-  }
-  return ctx;
-}

@@ -1,7 +1,10 @@
 /** RFC-4180-ish CSV parse/serialise with quoted-field support. */
 
 export function parseCsv(input: string): string[][] {
-  const text = input.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  // Excel writes UTF-8 with a BOM. Left in place it becomes part of the first
+  // header name ("\ufeffname"), so every column match silently fails and the
+  // importer falls back to positional guessing.
+  const text = input.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const rows: string[][] = [];
   let row: string[] = [];
   let field = "";
@@ -43,11 +46,25 @@ export function parseCsv(input: string): string[][] {
   return rows.filter((r) => r.some((c) => c.trim() !== ""));
 }
 
+/**
+ * Escapes one CSV field.
+ *
+ * Two separate problems, both real:
+ *  1. Delimiters/quotes/newlines need RFC 4180 quoting.
+ *  2. A field starting with `=`, `+`, `-`, `@`, TAB or CR is a *formula* to Excel,
+ *     Sheets and LibreOffice. A lead called `=HYPERLINK("http://evil","click")`
+ *     would execute when the customer opens their export, so those values are
+ *     prefixed with an apostrophe and quoted, which spreadsheets treat as text.
+ */
+function escapeCsvField(value: string | number | null | undefined): string {
+  const s = value === null || value === undefined ? "" : String(value);
+  const looksLikeFormula = /^[=+\-@\t\r]/.test(s);
+  const body = looksLikeFormula ? `'${s}` : s;
+  return looksLikeFormula || /[",\n]/.test(body) ? `"${body.replace(/"/g, '""')}"` : body;
+}
+
 export function toCsv(headers: string[], rows: (string | number | null | undefined)[][]): string {
-  const escape = (value: string | number | null | undefined): string => {
-    const s = value === null || value === undefined ? "" : String(value);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
+  const escape = escapeCsvField;
   const lines = [headers.map(escape).join(",")];
   for (const r of rows) lines.push(r.map(escape).join(","));
   return lines.join("\n");
@@ -80,7 +97,7 @@ export const LEAD_STATUS_LABEL: Record<LeadStatus, string> = {
 
 export function mapImportRows(rows: string[][]): { rows: LeadImportRow[]; skipped: number; headers: string[] } {
   if (rows.length === 0) return { rows: [], skipped: 0, headers: [] };
-  const headers = rows[0]!.map((h) => h.trim().toLowerCase());
+  const headers = rows[0]!.map((h) => h.replace(/^\uFEFF/, "").trim().toLowerCase());
   const hasHeader = headers.some((h) => ["name", "email", "company"].includes(h));
   const body = hasHeader ? rows.slice(1) : rows;
   const idx = (key: string) => headers.indexOf(key);

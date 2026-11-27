@@ -142,7 +142,3 @@ export function renderPdf(lines: PdfLine[]): Uint8Array {
   return new Uint8Array(Buffer.from(pdf, "latin1"));
 }
 
-/** Escapes the few HTML-significant characters for HTML previews. */
-export function htmlEscape(input: string): string {
-  return input.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}

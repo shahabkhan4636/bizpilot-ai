@@ -248,3 +248,66 @@ describe("public lead capture endpoint", () => {
     expect(payload.error).toContain("100");
   });
 });
+
+describe("capture endpoint hardening", () => {
+  function jsonRequest(body: string, key: string, slug: string, extraHeaders: Record<string, string> = {}) {
+    return new Request("http://localhost/api/leads/capture", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-capture-key": key, "x-org-slug": slug, ...extraHeaders },
+      body,
+    });
+  }
+
+  it("rejects an oversized body with 413 instead of parsing it", async () => {
+    process.env.LEAD_CAPTURE_KEY = "capture-secret";
+    const { slug } = await seedOrg();
+    const huge = JSON.stringify({ name: "A", notes: "x".repeat(70 * 1024) });
+    const res = await captureLead(jsonRequest(huge, "capture-secret", slug));
+    expect(res.status).toBe(413);
+    expect((await res.json()).error).toMatch(/too large/i);
+  });
+
+  it("rejects an oversized body even when the client lies about content-length", async () => {
+    process.env.LEAD_CAPTURE_KEY = "capture-secret";
+    const { slug } = await seedOrg();
+    const huge = JSON.stringify({ name: "A", notes: "y".repeat(70 * 1024) });
+    const res = await captureLead(
+      // A wrong content-length must not be trusted; the bytes are measured.
+      jsonRequest(huge, "capture-secret", slug, { "content-length": "12" })
+    );
+    expect(res.status).toBe(413);
+  });
+
+  it("refuses a JSON array or null instead of coercing it", async () => {
+    process.env.LEAD_CAPTURE_KEY = "capture-secret";
+    const { slug } = await seedOrg();
+    for (const bad of ["[1,2,3]", "null", '"text"']) {
+      const res = await captureLead(jsonRequest(bad, "capture-secret", slug));
+      expect(res.status, `body ${bad}`).toBe(400);
+    }
+  });
+
+  it("rejects an empty key rather than comparing it to the configured one", async () => {
+    process.env.LEAD_CAPTURE_KEY = "capture-secret";
+    const { slug } = await seedOrg();
+    const res = await captureLead(
+      new Request("http://localhost/api/leads/capture", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-org-slug": slug },
+        body: JSON.stringify({ name: "No key" }),
+      })
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("does not leak the configured key length through the comparison", async () => {
+    // secureCompare hashes both sides, so prefixes of the real key are just as
+    // wrong as unrelated strings.
+    process.env.LEAD_CAPTURE_KEY = "capture-secret";
+    const { slug } = await seedOrg();
+    for (const attempt of ["c", "capture-secre", "capture-secrets", "apture-secret"]) {
+      const res = await captureLead(jsonRequest(JSON.stringify({ name: "X" }), attempt, slug));
+      expect(res.status, `key ${attempt}`).toBe(401);
+    }
+  });
+});

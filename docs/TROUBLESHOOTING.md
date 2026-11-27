@@ -34,3 +34,19 @@ in that response.
 `src/lib/logger.ts` writes JSON lines with key+value redaction for secrets and `LOG_LEVEL` honoured
 (`debug|info|warn|error`). Error boundaries show the user a digest; the same digest appears in the
 server log line, so a report of "it said 123456789" can be traced to the throw.
+## Downloads and documents
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `410` "The stored file is missing on this server" | the `documents` row survived but the file under `data/uploads` did not (volume wiped, container replaced without a persistent disk) | re-upload the file, or restore `data/uploads` from backup. The row is deliberately *not* deleted so the record of the file survives |
+| `409` "this workspace has no Dropbox connection" | the row says `storage_provider = dropbox` but the workspace's OAuth credential was disconnected and no deployment token exists | reconnect Dropbox on `/documents`, or set `DROPBOX_ACCESS_TOKEN` |
+| `502` "Dropbox download failed" | Dropbox rejected the call (expired token, missing scope, deleted app) | the message includes the Dropbox status; reconnect to get a fresh refresh token |
+| Upload says "…files are not supported" | the extension is not on the allowlist (pdf, png, jpg, jpeg, webp, txt, csv, doc, docx, xls, xlsx) | rename/convert, or add the extension to `EXTENSION_MIME` in `src/lib/actions/documents.ts` |
+
+## Auth rate limits
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| Signup answers 429 for a whole office | the ceiling is per IP (default 10 signups/hour, 20 logins/10 min) and everyone shares one NAT address | set `SIGNUP_RATE_LIMIT` / `LOGIN_RATE_LIMIT` (and the `*_WINDOW_SECONDS` variants) to a value that suits the deployment. Those variables are read at startup; an invalid value falls back to the documented default |
+| `/api/readiness` reports `schema_columns: missing …` | the code is newer than the database | `npm run db:migrate` |
+

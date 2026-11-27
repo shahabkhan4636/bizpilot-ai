@@ -27,6 +27,7 @@ export default async function ProposalDetailPage({ params }: { params: Promise<{
     id: string; title: string; client_name: string; client_email: string | null; summary: string | null;
     scope: string | null; terms: string | null; currency: string; subtotal_cents: number; discount_cents: number; discount_percent: number; tax_cents: number;
     total_cents: number; status: string; share_token: string | null; version: number; accepted_at: string | null;
+    accepted_by_name: string | null; rejected_reason: string | null;
     rejected_at: string | null; expires_at: string | null; created_at: string; updated_at: string;
     customer_id: string | null; lead_id: string | null;
   }>("select * from proposals where id = ? and organization_id = ?", [id, orgId]);
@@ -155,7 +156,8 @@ export default async function ProposalDetailPage({ params }: { params: Promise<{
             </Card>
           ) : (
             <Alert tone="success" title="Accepted by the client">
-              Accepted {proposal.accepted_at ? formatDate(proposal.accepted_at) : ""}. Locked from further edits so the agreed
+              Accepted by <strong>{proposal.accepted_by_name ?? "the client"}</strong>{" "}
+              {proposal.accepted_at ? formatDate(proposal.accepted_at) : ""}. Locked from further edits so the agreed
               figures cannot change.
             </Alert>
           )}
@@ -189,8 +191,15 @@ export default async function ProposalDetailPage({ params }: { params: Promise<{
               <StatusButtons proposalId={proposal.id} status={proposal.status} />
               <div className="space-y-1 text-xs text-[hsl(var(--fg-muted))]">
                 <p>Created {formatDate(proposal.created_at)}</p>
-                {proposal.accepted_at ? <p>Accepted {formatDate(proposal.accepted_at)}</p> : null}
+                {proposal.accepted_at ? (
+                  <p>Accepted {formatDate(proposal.accepted_at)}{proposal.accepted_by_name ? ` by ${proposal.accepted_by_name}` : ""}</p>
+                ) : null}
                 {proposal.rejected_at ? <p>Declined {formatDate(proposal.rejected_at)}</p> : null}
+                {proposal.rejected_reason ? (
+                  <p className="rounded-lg bg-[hsl(var(--muted))] p-2 text-[hsl(var(--fg))]">
+                    Client&apos;s reason: {proposal.rejected_reason}
+                  </p>
+                ) : null}
               </div>
             </CardContent>
           </Card>

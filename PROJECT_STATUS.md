@@ -15,13 +15,13 @@ asserted — the verification commands and their real output are in `PHASE-3-REP
 | --- | --- | --- |
 | Types | `npx tsc --noEmit` | ✅ clean, strict, 0 `any` |
 | Lint | `npx eslint .` | ✅ 0 errors / 0 warnings |
-| Unit + integration | `npx vitest run` | ✅ 147 passed, 10 skipped |
-| E2E on PostgreSQL | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ 20 passed |
-| E2E on SQLite | `npx playwright test` | ✅ 20 passed |
+| Unit + integration | `npx vitest run` | ✅ 175 passed, 10 skipped (13 files) |
+| E2E on PostgreSQL | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ 23 passed |
+| E2E on SQLite | `npx playwright test` | ✅ 23 passed |
 | All gates | `npm run verify` (add `-- --e2e` for the suite) | ✅ green |
 | Production build | `npm run build` | ✅ 36 routes |
 | Readiness probe | `GET /api/readiness` | ✅ 200 with provider warnings |
-| Fresh-database path | `db:migrate` → `seed` → e2e on an empty Postgres | ✅ 28 tables, 83 policies, 19 e2e journeys |
+| Fresh-database path | `db:migrate` → `seed` → e2e on an empty Postgres | ✅ 29 tables, 83 policies, 7 migrations, 23 e2e journeys |
 | Provider behaviour | `npx vitest run tests/providers.test.ts` | ✅ 15 cases against a real HTTP double |
 
 ## Decisions worth not re-litigating

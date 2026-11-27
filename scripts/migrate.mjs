@@ -58,6 +58,29 @@ if (statusOnly) {
 }
 
 const before = tableNames();
+
+/**
+ * This script bootstraps a *fresh* database by applying the consolidated snapshot.
+ * Against a database that already has tables that snapshot is the wrong tool: the
+ * `create table if not exists` lines are no-ops but the `alter table add column`
+ * lines are not, so it dies half-way with something like "duplicate column name".
+ * Point the caller at the incremental runner instead of printing a raw stack trace.
+ */
+const MANAGED_TABLES = ["organizations", "profiles", "leads", "schema_migrations"];
+if (before.some((t) => MANAGED_TABLES.includes(t))) {
+  const applied = before.includes("schema_migrations")
+    ? db.prepare("select count(*) as c from schema_migrations").get().c
+    : 0;
+  console.error(
+    `✖ ${path.relative(root, dbFile)} already has a BizPilot schema (${before.length} tables, ${applied} migration(s) recorded).`
+  );
+  console.error("  The snapshot in sql/schema.sqlite.sql only bootstraps an empty database.");
+  console.error("  To bring an existing database up to date use:  npm run db:migrate");
+  console.error("  To inspect it first:                          npm run db:migrate:status");
+  db.close();
+  process.exit(1);
+}
+
 console.log(`Applying ${path.relative(root, schemaPath)} …`);
 db.exec(fs.readFileSync(schemaPath, "utf8"));
 console.log(`Seeding  ${path.relative(root, seedPath)} …`);

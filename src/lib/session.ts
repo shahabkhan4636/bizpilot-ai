@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { newId, newToken } from "./ids";
+import { newToken } from "./ids";
 import { addDays, nowIso } from "./utils";
 import { run, get } from "./db";
 
@@ -71,6 +71,3 @@ export function getUserBySessionToken(token: string | null): SessionUser | null 
   };
 }
 
-export function newSessionId(): string {
-  return newId();
-}

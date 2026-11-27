@@ -20,11 +20,30 @@ export async function GET() {
     const plans = Number(get<{ c: number }>("select count(*) as c from plans")?.c ?? 0);
     checks.schema = { ok: plans >= 4, detail: `${plans} plans` };
 
-    const migrations =
-      engineName() === "postgres"
-        ? Number(get<{ c: number }>("select count(*) as c from schema_migrations")?.c ?? 0)
-        : all("select name from sqlite_master where type='table' and name='schema_migrations'").length;
+    // Rows, not "does the table exist": the old SQLite branch counted the table
+    // and cheerfully reported "1 applied" on a database with seven migrations.
+    const migrations = Number(get<{ c: number }>("select count(*) as c from schema_migrations")?.c ?? 0);
     checks.migrations = { ok: migrations > 0, detail: `${migrations} applied` };
+
+    // Existence counts prove nothing about *which* schema this is. Probe for the
+    // newest columns the code relies on, so a half-migrated database fails the
+    // probe instead of throwing "no such column" at a customer.
+    const required: [string, string][] = [
+      ["automations", "schedule_interval_minutes"],
+      ["integration_credentials", "provider"],
+      ["proposals", "accepted_by_name"],
+    ];
+    const missing: string[] = [];
+    for (const [table, column] of required) {
+      try {
+        all(`select ${column} from ${table} limit 1`);
+      } catch {
+        missing.push(`${table}.${column}`);
+      }
+    }
+    checks.schema_columns = missing.length === 0
+      ? { ok: true, detail: `${required.length} recent columns present` }
+      : { ok: false, detail: `missing ${missing.join(", ")} — run npm run db:migrate` };
   } catch (error) {
     logger.error("readiness: database check failed", { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ ready: false, checks, engine: engineName() }, { status: 503 });

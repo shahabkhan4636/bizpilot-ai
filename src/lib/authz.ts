@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireAuth, type AuthContext } from "./auth";
-import { can, canEditOwnedRecord, type Permission } from "./permissions";
+import { can, type Permission } from "./permissions";
 
 export class ForbiddenError extends Error {
   readonly code = "forbidden";
@@ -32,13 +32,3 @@ export async function requirePermission(permission: Permission, message?: string
   return ctx;
 }
 
-/** Record-level check for tenant data that carries an assignee. */
-export function assertCanEditOwned(
-  ctx: AuthContext,
-  ownerId: string | null,
-  permission: Permission
-): void {
-  if (!canEditOwnedRecord(ctx.membership.role, ctx.user.id, ownerId, permission)) {
-    throw new ForbiddenError("You can only change records assigned to you.");
-  }
-}

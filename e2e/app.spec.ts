@@ -635,3 +635,145 @@ test("scheduler and Dropbox report their real state instead of pretending", asyn
   await page.goto("/automations");
   await expect(page.getByText("The scheduler is not configured")).toBeVisible();
 });
+
+test("documents can be downloaded back byte-for-byte, and only by their own workspace", async ({ browser }) => {
+  const owner = { ...userA, email: `docs.${stamp}@vertex.example` };
+  const contextA = await browser.newContext();
+  const pageA = await contextA.newPage();
+  await signup(pageA, owner);
+
+  // A real file with a unicode name and a byte we can compare exactly.
+  const content = `contract for ${stamp}\n€ 1,200 — naïve café\n`;
+  const sourcePath = path.join(__dirname, `../data/tmp-${stamp}.txt`);
+  fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
+  fs.writeFileSync(sourcePath, content, "utf8");
+
+  await pageA.goto("/documents");
+  await pageA.getByLabel("File (max 10 MB)").setInputFiles(sourcePath);
+  await pageA.getByRole("button", { name: "Upload file" }).click();
+  await expect(pageA.getByText(/uploaded \(local storage\)/)).toBeVisible({ timeout: 30_000 });
+  await pageA.reload();
+
+  const downloadLink = pageA.getByRole("link", { name: /^Download / }).first();
+  await expect(downloadLink).toBeVisible();
+  const href = await downloadLink.getAttribute("href");
+  expect(href).toMatch(/^\/api\/documents\/[0-9a-f-]{8,}\/download$/);
+
+  const [download] = await Promise.all([pageA.waitForEvent("download"), downloadLink.click()]);
+  const savedPath = await download.path();
+  expect(fs.readFileSync(savedPath!, "utf8")).toBe(content);
+  expect(download.suggestedFilename()).toContain(`tmp-${stamp}.txt`);
+
+  // Same URL from another workspace: not found (404), never the bytes.
+  const contextB = await browser.newContext();
+  const pageB = await contextB.newPage();
+  await signup(pageB, { ...userB, email: `docs.b.${stamp}@vertex.example` });
+  const foreign = await contextB.request.get(href!);
+  expect(foreign.status()).toBe(404);
+  expect(await foreign.text()).not.toContain("naïve café");
+
+  // Signed out: 401, not the file.
+  const anonymous = await browser.newContext();
+  const anonRes = await anonymous.request.get(href!);
+  expect(anonRes.status()).toBe(401);
+
+  fs.unlinkSync(sourcePath);
+  await contextB.close();
+  await anonymous.close();
+  await contextA.close();
+});
+
+test("a client cannot double-accept a proposal, and a decline records the reason", async ({ browser }) => {
+  const owner = { ...userA, email: `prop.${stamp}@vertex.example` };
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await signup(page, owner);
+
+  async function makeProposal(title: string): Promise<string> {
+    await page.goto("/proposals/new");
+    await page.getByLabel("Proposal title *").fill(title);
+    await page.getByLabel("Client name *").fill("Sara Ahmed");
+    await page.getByLabel("Line 1 description").fill("Sprint");
+    await page.getByLabel("Line 1 quantity").fill("1");
+    await page.getByLabel("Line 1 unit price").fill("1200");
+    await page.getByRole("button", { name: "Create proposal" }).click();
+    await page.waitForURL(/\/proposals\/[0-9a-f-]{8,}/, { timeout: 30_000 });
+    await page.getByRole("button", { name: "Mark as sent" }).click();
+    await expect(page.getByText(/Proposal marked as sent/)).toBeVisible();
+    const link = await page.getByRole("link", { name: "Client view" }).getAttribute("href");
+    expect(link).toBeTruthy();
+    return link!;
+  }
+
+  // 1. Accept, then have a second client open the same link and try to accept again.
+  const acceptLink = await makeProposal(`Double accept ${stamp}`);
+  const c1 = await browser.newContext();
+  const p1 = await c1.newPage();
+  await p1.goto(acceptLink);
+  await p1.getByLabel("Your name").fill("First Signatory");
+  await p1.getByRole("button", { name: "Accept this proposal" }).click();
+  await expect(p1.getByText("Accepted", { exact: true })).toBeVisible();
+  await c1.close();
+
+  const c2 = await browser.newContext();
+  const p2 = await c2.newPage();
+  await p2.goto(acceptLink);
+  // Gone: the client view is the accepted receipt, not a form to accept again.
+  await expect(p2.getByRole("button", { name: "Accept this proposal" })).toHaveCount(0);
+  await expect(p2.getByText("Accepted", { exact: true })).toBeVisible();
+  await c2.close();
+
+  // The workspace sees who accepted, and it is still the first signatory.
+  await page.reload();
+  await expect(page.getByText(/First Signatory/).first()).toBeVisible();
+
+  // 2. Decline with a reason: reason is stored and the workspace can read it.
+  const declineLink = await makeProposal(`Decline ${stamp}`);
+  const c3 = await browser.newContext();
+  const p3 = await c3.newPage();
+  await p3.goto(declineLink);
+  await p3.getByLabel(/reason/i).fill("Budget moved to next quarter");
+  await p3.getByRole("button", { name: /Decline/i }).click();
+  // The client view flips straight into the declined receipt (the form is gone).
+  await expect(p3.getByText("Declined", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(p3.getByRole("button", { name: /Decline/i })).toHaveCount(0);
+  await c3.close();
+
+  await page.goto("/proposals");
+  await page.getByRole("link", { name: `Decline ${stamp}` }).click();
+  await expect(page.getByText(/Budget moved to next quarter/).first()).toBeVisible();
+  await context.close();
+});
+
+test("a lead converts to a customer exactly once, and the lead links to it", async ({ browser }) => {
+  const owner = { ...userA, email: `convert.${stamp}@vertex.example` };
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await signup(page, owner);
+  await createLead(page, `Convertible ${stamp}`, `convertible.${stamp}@vertex.example`);
+  const leadUrl = page.url();
+
+  await page.getByRole("button", { name: "Convert to customer" }).click();
+  await page.waitForURL(/\/customers\/[0-9a-f-]{8,}/, { timeout: 30_000 });
+  const customerUrl = page.url();
+  await expect(page.getByRole("heading", { name: `Convertible ${stamp}` })).toBeVisible();
+  // The converted record carries the lead's contact details…
+  await expect(page.getByLabel("Email")).toHaveValue(`convertible.${stamp}@vertex.example`);
+  // …and the original lead is linked back from the customer.
+  await expect(page.getByRole("link", { name: `Convertible ${stamp}` }).first()).toBeVisible();
+
+  // Idempotent: the lead now points at the customer, and there is exactly one.
+  await page.goto(leadUrl);
+  await expect(page.getByRole("link", { name: "View customer" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Convert to customer" })).toHaveCount(0);
+
+  await page.goto("/customers");
+  await expect(page.getByRole("link", { name: `Convertible ${stamp}` })).toHaveCount(1);
+
+  // The lead was marked won as part of the conversion.
+  await page.goto(leadUrl);
+  await expect(page.getByText(/Won/i).first()).toBeVisible();
+
+  await page.goto(customerUrl);
+  await context.close();
+});

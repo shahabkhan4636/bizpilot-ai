@@ -265,3 +265,65 @@ per-workspace isolation, reconnect updates instead of duplicating, expired-token
 
 The e2e suite's last test failed on its 21st login: login is rate limited to 20 per 10 minutes **by
 design**, so the test now signs up its own user instead of leaning on the limiter's budget.
+
+## 9. Hostile-input audit pass (2026-08-09, after `32601ac`)
+
+The instruction was to stop claiming the project is finished and stress it instead. Every item below was
+reproduced with an executed probe **before** being changed, and re-run afterwards. No item is a
+"would be nice": each one is a behaviour that was wrong, missing or misleading.
+
+### 9.1 Bugs found by probing, and fixed
+
+| # | What was wrong | How it was proved | Fix |
+| --- | --- | --- | --- |
+| 1 | **CSV formula injection.** `toCsv` escaped delimiters but not leading `= + - @ TAB CR`, so a lead named `=HYPERLINK("http://evil","click")` executed when the customer opened `/api/leads/export` in Excel/Sheets | probe printed the raw payload, unquoted, in the export | `escapeCsvField` prefixes such values with `'` and quotes them; regression tests cover all five characters |
+| 2 | **Excel CSVs imported with broken headers.** A UTF-8 BOM made the first header `"\ufeffname"`, so header matching silently failed and the importer fell back to positional guessing | probe: `parseCsv("\uFEFFname,email…")` → `"\ufeffname"` | BOM stripped in `parseCsv` *and* defensively per header in `mapImportRows` |
+| 3 | **`money()` accepted hex and scientific notation** — `"0x10"` became $16.00, `"1e3"` became $1,000.00 | probe printed `1600` and `100000` | shape check `^\d+(\.\d+)?$` after removing `$`, `,`, spaces; hex/exponent/junk now raise `ValidationError` |
+| 4 | **Documents could be uploaded and listed but never opened.** There was no download route at all; the file was unreachable | `grep` for any route under `documents` returned only the page; the table had a Delete button and nothing else | `GET /api/documents/[id]/download` — session + `document:read` + workspace-scoped lookup (another tenant's id is 404, not 403), `Content-Disposition` attachment with RFC 5987 filename, `nosniff`, `no-store`, audited, 409 when the Dropbox link is gone, 410 when the local file is missing |
+| 5 | **Proposal acceptance was racy and the signatory was lost.** Two submits both "succeeded"; the client's name existed only in the activity log, never on the row | code read + the accept update had no status guard | conditional update (`where status in ('sent','draft','expired')`); second attempt returns a notice. Migration `007` adds `accepted_by_name` / `rejected_reason`, both now shown in the UI |
+| 6 | **Declines were a dead end.** The reason was not stored and no `proposal.rejected` trigger existed, so "client said no → create a follow-up" was impossible | trigger catalogue lacked the event; reason only in a log line | `proposal.rejected` added to `TRIGGERS`, decline persists the reason, notifies and dispatches the trigger |
+| 7 | **"Convert lead to customer" existed as a server action nothing called** — the CRM flow was unreachable from the UI, and a double submit would have created two customers | dead-export sweep; the action had no `customer_id` guard | wired to the lead detail page (`Convert to customer` → `View customer`), made idempotent, fires `customer.created`, revalidates |
+| 8 | **Connecting Dropbox was possible, disconnecting was not** — `deleteCredential` was only reachable from tests | dead-export sweep | `disconnectDropboxAction` (owner/admin only, audited) plus a Disconnect button and an explanatory note on `/documents` |
+| 9 | **The rate limiter was read-then-write**, so a concurrent burst could pass more requests than the limit — the exact case a login limiter exists for | code read of `rateLimit()`; no transaction between the count read and the increment | single atomic `insert … on conflict do update … returning`; one statement, correct on SQLite *and* Postgres (verified by running the e2e suite on both engines) |
+| 10 | **Auth ceilings were hardcoded**, so an office behind one NAT address could not raise them without a code change | probe: the 11th signup in the e2e run was refused by the app, not by the test | `LOGIN_RATE_LIMIT`, `LOGIN_RATE_WINDOW_SECONDS`, `SIGNUP_RATE_LIMIT`, `SIGNUP_RATE_WINDOW_SECONDS`; invalid values fall back to the documented defaults instead of disabling the control |
+| 11 | **`/api/readiness` reported "1 applied" on a 7-migration SQLite database** — it counted the existence of the `schema_migrations` *table* | probe against the real route | counts rows, and additionally probes for the newest columns (`automations.schedule_interval_minutes`, `integration_credentials.provider`, `proposals.accepted_by_name`) so a half-migrated database fails the probe instead of throwing `no such column` at a customer |
+| 12 | **The lead capture endpoint trusted clients for size, compared the shared key with `!==`**, and coerced any JSON into an object (an array or `null` became one field named `0`) | probe: `[1,2,3]` and `null` produced a lead-shaped payload; no size ceiling existed | 64 KB ceiling enforced on the bytes *and* the declared length (413), constant-time `secureCompare` on SHA-256 digests, non-object JSON rejected with 400, empty key rejected without comparing it |
+| 13 | **Upload type checking trusted `file.type`**, which a client can leave empty to skip the allowlist entirely; the Dropbox path used the raw client filename, so `../..` could write outside the workspace folder | code read of `uploadDocumentAction` | type derived from the extension allowlist (the declared MIME is only cross-checked), single-segment `sanitizeFileName` used for local storage *and* the Dropbox path |
+| 14 | **`?page=` was unbounded** — a hand-edited URL asked for a deep offset and left the user on "Page 999 of 3" with no way back | code read | page clamped to the real page count, absolute ceiling 10,000 |
+| 15 | **`scripts/migrate.mjs` died with a raw `SqliteError: duplicate column name`** when run against an existing database | ran it against `data/bizpilot.db` | detects an existing schema and refuses with the two correct commands (`db:migrate`, `db:migrate:status`), exit 1 |
+| 16 | **Dead code**: `newSessionId`, `formatDateTime`, `initials`, `htmlEscape`, `defaultProvider`, `assertCanEditOwned`, `requireAdmin` | sweep for exports referenced nowhere in `src/`, `tests/`, `e2e/` or `scripts/` | deleted; lint is clean |
+
+Confirmed **not** bugs, after checking the code rather than assuming: `parseCsv` returning `string[][]`
+is by design (mapping happens in `mapImportRows`); `str("  ")` returning `""` is correct (it trims, and
+the field was not `required`); `money("")` returning `0` matches the "blank optional amount" form
+contract; `renderPdf` turning non-Latin-1 text into `?` is documented WinAnsi behaviour — the output is
+a valid PDF, so the limitation is stated in the docs instead of "fixed" into broken bytes.
+
+### 9.2 Tests added in this pass
+
+| File | Tests | What they pin down |
+| --- | --- | --- |
+| `tests/hardening.test.ts` | 23 | CSV formula neutralisation, BOM/CRLF/quoted-newline import, strict `money`, PDF escaping and degradation, upload-path containment, rate-limiter accounting (incl. burst), env-configurable limits with safe fallback, readiness schema probe |
+| `tests/webhook.test.ts` (+5) | 19 total | oversized body → 413 even with a lying `content-length`, non-object JSON → 400, missing key → 401, key prefixes rejected |
+| `e2e/app.spec.ts` (+3) | 23 total | document download round-trips byte-for-byte with a unicode name; another workspace gets 404 and a signed-out visitor 401; a proposal cannot be double-accepted and a decline stores its reason; a lead converts to a customer exactly once |
+
+### 9.3 Executed verification for this pass
+
+| Command | Result |
+| --- | --- |
+| `npx tsc --noEmit` | clean |
+| `npx eslint .` | 0 errors, 0 warnings |
+| `npx vitest run` | **175 passed, 10 skipped** (13 files) |
+| `node scripts/build-schema.mjs --check` | matches 7 migrations; RLS file in sync |
+| `npm run db:migrate` (SQLite, then both Postgres databases) | 007 applied · 7 total on each |
+| `node scripts/migrate.mjs` on an existing DB / on a fresh file | refuses with guidance (exit 1) / bootstraps (exit 0) |
+| `npm run verify` | typecheck, lint, unit, schema, build — all green |
+| `npx playwright test` | **23/23 on SQLite** |
+| `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | **23/23 on PostgreSQL** |
+
+### 9.4 Still not verified (no credentials on this machine)
+
+Live Stripe charges, Resend delivery, real AI generation, a real Dropbox OAuth round-trip, and a Vercel
+deployment remain **BLOCKED**, exactly as listed in `PROJECT_STATUS.md`. Their code paths are exercised
+against local HTTP doubles and by the tests above, but "tested against a double" is not "proven in
+production" and this report does not claim otherwise.

@@ -75,9 +75,15 @@ export default async function LeadsPage({
   }
 
   const orderBy = SORTS[sp.sort ?? "created_desc"] ?? SORTS.created_desc;
-  const page = Math.max(1, Number(sp.page ?? 1) || 1);
 
   const total = get<{ c: number }>(`select count(*) as c from leads l where ${where.join(" and ")}`, params)?.c ?? 0;
+  const pages = Math.max(1, Math.ceil(total / PER_PAGE));
+  // `?page=` is untrusted input. Bound it by the real page count as well as an
+  // absolute ceiling, so a hand-edited URL cannot ask for a deep offset or leave
+  // the user on "Page 999 of 3" with no way back.
+  const requestedPage = Math.trunc(Number(sp.page ?? 1)) || 1;
+  const page = Math.min(pages, 10_000, Math.max(1, requestedPage));
+
   const rows = all<LeadRow>(
     `select l.id, l.name, l.email, l.company, l.status, l.source, l.value_cents, l.ai_score,
             l.next_follow_up_at, l.created_at, p.full_name as owner_name
@@ -87,7 +93,6 @@ export default async function LeadsPage({
       limit ? offset ?`,
     [...params, PER_PAGE, (page - 1) * PER_PAGE]
   );
-
   const totals = get<{ pipeline: number; won: number }>(
     `select coalesce(sum(case when status not in ('won','lost') then value_cents else 0 end),0) as pipeline,
             coalesce(sum(case when status='won' then value_cents else 0 end),0) as won
@@ -95,7 +100,6 @@ export default async function LeadsPage({
     [orgId]
   ) ?? { pipeline: 0, won: 0 };
 
-  const pages = Math.max(1, Math.ceil(total / PER_PAGE));
   const queryFor = (p: number) => {
     const usp = new URLSearchParams();
     if (sp.q) usp.set("q", sp.q);

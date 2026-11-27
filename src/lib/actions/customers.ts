@@ -112,11 +112,15 @@ export async function convertLeadToCustomerAction(form: FormData): Promise<void>
   const { user, membership } = await requireAuth();
   const orgId = membership.organization_id;
   const leadId = String(form.get("lead_id") ?? "");
-  const lead = get<{ id: string; name: string; email: string | null; phone: string | null; company: string | null; notes: string | null; value_cents: number }>(
-    "select id, name, email, phone, company, notes, value_cents from leads where id = ? and organization_id = ? and deleted_at is null",
+  const lead = get<{ id: string; name: string; email: string | null; phone: string | null; company: string | null; notes: string | null; value_cents: number; customer_id: string | null }>(
+    "select id, name, email, phone, company, notes, value_cents, customer_id from leads where id = ? and organization_id = ? and deleted_at is null",
     [leadId, orgId]
   );
   if (!lead) redirect("/leads");
+
+  // Idempotent: a double-clicked button (or a resubmitted form) must not create a
+  // second customer for the same lead — it opens the one that already exists.
+  if (lead.customer_id) redirect(`/customers/${lead.customer_id}`);
 
   const customerId = newId();
   const now = nowIso();
@@ -128,6 +132,13 @@ export async function convertLeadToCustomerAction(form: FormData): Promise<void>
   run("update leads set customer_id = ?, status = 'won', updated_at = ? where id = ? and organization_id = ?", [customerId, now, leadId, orgId]);
   logActivity({ organizationId: orgId, actorId: user.id, entityType: "customer", entityId: customerId, action: "customer.created_from_lead", summary: `Converted lead "${lead.name}" to a customer` });
   audit({ organizationId: orgId, actorId: user.id, action: "customer.convert_lead", targetType: "customer", targetId: customerId, metadata: { leadId } });
+  try {
+    await dispatchTrigger(orgId, "customer.created", {
+      type: "customer", id: customerId,
+      data: { id: customerId, name: lead.name, from_lead: leadId },
+    }, { actorId: user.id });
+  } catch { /* non-fatal: the customer exists either way */ }
   revalidatePath("/customers");
+  revalidatePath(`/leads/${leadId}`);
   redirect(`/customers/${customerId}`);
 }

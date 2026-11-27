@@ -92,12 +92,13 @@ To get an admin panel, set `ADMIN_EMAIL` in `.env.local` **before** signing up w
 | `npm run build` / `npm start` | Production build / serve |
 | `npm run typecheck` | `tsc --noEmit` (strict) |
 | `npm run lint` | ESLint 9 flat config (Next + React hooks + TS rules) |
-| `npm test` | Vitest: unit + integration (100 tests) |
-| `npm run test:e2e` | Playwright against a production build on port 3100 (19 journeys) |
+| `npm test` | Vitest: unit + integration (185 tests) |
+| `npm run test:e2e` | Playwright against a production build on port 3100 (23 journeys, on SQLite and on Postgres) |
 | `npm run db:migrate` | Apply pending migrations; `--status`, `--down N`, `--to ID`, `--baseline` |
 | `npm run db:schema` | Regenerate `sql/schema.sqlite.sql`; `--check` fails if it is stale |
 | `npm run db:migrate` also seeds the plan catalogue | required: `subscriptions.plan_code` references `plans(code)` |
 | `GET /api/cron/automations` | Scheduler entry point (`Authorization: Bearer $CRON_SECRET`); `?dryRun=1` reports without changing anything |
+| `GET /api/documents/[id]/download` | Signed-in download of one document, scoped to its workspace (404 for another workspace's id) |
 | `npm run db:backup` | Verified backup (`pg_dump` / `VACUUM INTO`) → gzipped file |
 | `npm run db:restore` | Restore a backup, with destructive-command guardrails |
 | `npm run seed` | Create/reset the first account |
@@ -126,7 +127,10 @@ Names only — see `.env.example` for the full annotated list.
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Checkout, portal, webhooks |
 | `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_PROFESSIONAL`, `STRIPE_PRICE_BUSINESS`, `STRIPE_PRICE_AGENCY` | One price ID per plan; the annual ID is the same value with an `_annual` suffix |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Sending approved email |
-| `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REDIRECT_URI`, `DROPBOX_ACCESS_TOKEN` | Storing files in Dropbox instead of local disk |
+| `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REDIRECT_URI`, `DROPBOX_ACCESS_TOKEN` | Storing files in Dropbox (per-workspace OAuth, or one deployment token) |
+| `DROPBOX_DOWNLOAD_URL` | Overriding the Dropbox content endpoint (proxies, tests) |
+| `CRON_SECRET` | Enabling the automations scheduler endpoint |
+| `LOGIN_RATE_LIMIT`, `LOGIN_RATE_WINDOW_SECONDS`, `SIGNUP_RATE_LIMIT`, `SIGNUP_RATE_WINDOW_SECONDS` | Tuning per-IP auth ceilings (defaults 20/10 min and 10/hour) |
 | `ADMIN_EMAIL` | Which account becomes super-admin |
 | `LEAD_CAPTURE_KEY` | Enables the public lead capture endpoint |
 | `BIZPILOT_DB_FILE` | Overrides the SQLite file path (tests use this) |
