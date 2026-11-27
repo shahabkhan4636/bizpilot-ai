@@ -114,6 +114,7 @@ To get an admin panel, set `ADMIN_EMAIL` in `.env.local` **before** signing up w
 | `docs/BACKUP-AND-RESTORE.md` | taking or restoring a backup |
 | `docs/TROUBLESHOOTING.md` | something is broken and `/api/readiness` is the first clue |
 | `docs/LAUNCH-RUNBOOK.md` | taking it live: database, deploy, env vars, Stripe, domain, go-live checks |
+| `docs/PAYMENTS-PAKISTAN.md` | SadaPay / JazzCash / EasyPaisa / bank — what works today and what needs a merchant account |
 | `marketing/LAUNCH-KIT.md` | landing copy, pricing, cold outreach scripts, demo script, objections |
 | `marketing/FIRST-10-CUSTOMERS.md` | the 14-day plan to the first ten paying workspaces (+ `lead-tracker.csv`) |
 | `PHASE-REPORT.md`, `PHASE-2-REPORT.md`, `PHASE-3-REPORT.md` | the audit trail of what changed, and what each phase proved |
@@ -136,6 +137,7 @@ Names only — see `.env.example` for the full annotated list.
 | `LOGIN_RATE_LIMIT`, `LOGIN_RATE_WINDOW_SECONDS`, `SIGNUP_RATE_LIMIT`, `SIGNUP_RATE_WINDOW_SECONDS` | Tuning per-IP auth ceilings (defaults 20/10 min and 10/hour) |
 | `ADMIN_EMAIL` | Which account becomes super-admin |
 | `LEAD_CAPTURE_KEY` | Enables the public lead capture endpoint |
+| `PKR_PER_USD` | Rupee price shown for the USD plan catalogue (default 280) |
 | `BIZPILOT_DB_FILE` | Overrides the SQLite file path (tests use this) |
 
 Nothing is hardcoded: every secret is read from the environment at request time, and the UI reports the real

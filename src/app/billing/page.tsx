@@ -4,6 +4,7 @@ import { loadAppContext } from "@/lib/app-context";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader, StatCard } from "@/components/page-header";
 import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState, Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
@@ -99,12 +100,30 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
       ) : null}
       {!stripeReady ? (
         <div className="mb-4">
-          <Alert tone="warning" title="Stripe is not configured">
-            Checkout and the billing portal are disabled because <code>STRIPE_SECRET_KEY</code> is missing. The workspace
-            runs on {ctx.plan.name} limits. See the README for the required keys and webhook setup.
+          <Alert tone="warning" title="Card payments (Stripe) are not configured">
+            Stripe does not onboard Pakistani businesses, so for rupees use{" "}
+            <Link href="/billing/local" className="underline">local payments</Link> — SadaPay, JazzCash, EasyPaisa or
+            bank transfer, approved by you inside the app. Card checkout stays disabled until{" "}
+            <code>STRIPE_SECRET_KEY</code> exists. The workspace runs on {ctx.plan.name} limits.
           </Alert>
         </div>
       ) : null}
+
+      <div className="mb-4">
+        <Card>
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+            <div>
+              <p className="font-medium">SadaPay · JazzCash · EasyPaisa · bank transfer</p>
+              <p className="text-sm text-[hsl(var(--fg-muted))]">
+                Receive rupees in your own wallet. You approve the payment, and the plan activates.
+              </p>
+            </div>
+            <Link href="/billing/local">
+              <Button size="sm" variant="outline">Open local payments</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Current plan" value={ctx.plan.name} hint={sub ? `${sub.status}${sub.cancel_at_period_end ? " · cancels at period end" : ""}` : "no subscription row"} />

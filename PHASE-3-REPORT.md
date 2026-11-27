@@ -327,3 +327,43 @@ Live Stripe charges, Resend delivery, real AI generation, a real Dropbox OAuth r
 deployment remain **BLOCKED**, exactly as listed in `PROJECT_STATUS.md`. Their code paths are exercised
 against local HTTP doubles and by the tests above, but "tested against a double" is not "proven in
 production" and this report does not claim otherwise.
+
+## 10. Local payments for Pakistan (SadaPay / JazzCash / EasyPaisa / bank)
+
+The ask was "let me receive payments in SadaPay, Pakistani market". The honest finding first: **no gateway
+can be switched on without a merchant account**, and **Stripe does not onboard Pakistani businesses at all** —
+so the product's only card path was unusable for the target market. What can work on day one is a transfer
+into the owner's own wallet, reconciled inside the app.
+
+### Implemented (`/billing/local`, migration 008)
+
+| Piece | Behaviour |
+| --- | --- |
+| Payout accounts | Owner/admin adds SadaPay, JazzCash, EasyPaisa, bank IBAN or "other", with an optional pay link/QR and instructions |
+| Validation | Wallet numbers must be `03xxxxxxxxx` (or `+923…`), bank must be a real Pakistani IBAN or an 8–20 digit account, titles 3–120 chars; a bad number is refused so no customer ever sends money to nowhere |
+| Link safety | Only `http(s)` links are accepted — a pasted `javascript:` URL can never reach an anchor |
+| Rupee pricing | USD catalogue × `PKR_PER_USD` (default 280), rounded **up** to the next Rs 100, shown before payment |
+| Payment claim | Plan, cycle, amount in rupees, transaction ID, optional note. **One open claim per workspace**, so a double submit cannot look like two payments |
+| Approval | Separate audited action: records reviewer, time, amount and reference, then sets the plan, status `active`, `billing_cycle` and a real `current_period_end` (+1 month / +1 year). Conditional on `status = 'pending'`, so two reviewers cannot extend twice |
+| Communication | In-app notification + workspace activity entry on submit, approve and reject. Nothing is silent |
+| Rupee vs card | `/billing` now states that card checkout is disabled because Stripe cannot onboard Pakistan, and links to the rupee path |
+
+### Tests (executed)
+
+- `tests/hardening.test.ts` +6: rupee conversion and rounding, env rate with safe fallback, real wallet/IBAN
+  formats accepted and malformed ones refused, `javascript:` link rejection, period-end maths (including the
+  Jan-31 rollover), account masking.
+- `e2e/app.spec.ts` "SadaPay local payment: configure, submit, approve, and the plan really upgrades" (24th
+  journey): adds a SadaPay wallet, is refused for an invalid number, submits Rs 22,200 with a reference, is
+  blocked from submitting twice, sees Starter before approval, approves, then the billing page really shows
+  Professional, the approve button is gone, and the workspace got both a notification and an activity entry.
+  Passed on **SQLite (24/24)** and **PostgreSQL (24/24)**.
+- Migration 008 applied to the SQLite dev database, both local Postgres databases and the Supabase production
+  database (30 tables now).
+
+### Still required before automatic verification
+
+A merchant account: SadaBiz (SadaPay), JazzCash merchant (merchant ID + integrity salt), EasyPaisa merchant, or
+an aggregator (Safepay/PayFast). `docs/PAYMENTS-PAKISTAN.md` lists exactly what each one asks for and the
+plug-in point (`src/lib/payments/<provider>.ts` → same approval path). Until then the flow is manual **on
+purpose**, and it says so on screen.

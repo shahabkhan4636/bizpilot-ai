@@ -306,20 +306,91 @@ describe("MIGRATION_SKIP keeps the bookkeeping honest", () => {
         encoding: "utf8",
       });
 
-    // Fresh database, 005 skipped: the runner must apply the other six and record
-    // only those six — no invented row, no "applied" for work it did not do.
+    // Every migration on disk except 005 must be applied, and the counts must add up
+    // without inventing a row for the skipped one.
+    const idList = fs
+      .readdirSync(path.join(process.cwd(), "sql", "migrations"))
+      .filter((f) => /\.up\.(sql|postgres\.sql|sqlite\.sql)$/.test(f))
+      .map((f) => f.split("_")[0]!)
+      .filter((v, i, a) => a.indexOf(v) === i)
+      .sort();
+    const expected = idList.filter((id) => id !== "005");
+    const total = idList.length;
+
     const out = run([], { MIGRATION_SKIP: "005" });
-    expect(out).toMatch(/6 migration\(s\) applied/);
+    expect(out).toMatch(new RegExp(`${expected.length} migration\\(s\\) applied`));
 
     const status = run(["--status"], { MIGRATION_SKIP: "005" });
     expect(status).toMatch(/005\s+SKIPPED/);
-    expect(status).toMatch(/6 applied · 0 pending · 1 skipped/);
+    expect(status).toMatch(new RegExp(`${expected.length} applied · 0 pending · 1 skipped`));
 
     const Database = (await import("better-sqlite3")).default;
     const db = new Database(dbFile, { readonly: true });
     const ids = (db.prepare("select id from schema_migrations order by id").all() as { id: string }[]).map((r) => r.id);
     db.close();
-    expect(ids).toEqual(["001", "002", "003", "004", "006", "007"]);
+    expect(ids).toEqual(expected);
+    expect(ids).toHaveLength(total - 1);
     fs.unlinkSync(dbFile);
   }, 60_000);
+});
+
+describe("local payments: rupees, wallets and the approval gate", () => {
+  it("converts USD cents to a payable rupee amount", async () => {
+    const { toPkrRupees } = await import("@/lib/local-payments");
+    // $29 at 280 = 8,120 → rounded up to the next 100.
+    expect(toPkrRupees(2900, 280)).toBe(8200);
+    expect(toPkrRupees(7900, 280)).toBe(22200);
+    expect(toPkrRupees(0)).toBe(0);
+    expect(toPkrRupees(-100)).toBe(0);
+  });
+
+  it("reads the exchange rate from the environment and ignores nonsense", async () => {
+    const { pkrPerUsd } = await import("@/lib/local-payments");
+    process.env.PKR_PER_USD = "305";
+    expect(pkrPerUsd()).toBe(305);
+    process.env.PKR_PER_USD = "zero";
+    expect(pkrPerUsd()).toBe(280);
+    process.env.PKR_PER_USD = "-5";
+    expect(pkrPerUsd()).toBe(280);
+    delete process.env.PKR_PER_USD;
+  });
+
+  it("accepts real Pakistani wallet formats and rejects what cannot receive money", async () => {
+    const { validateLocalMethod } = await import("@/lib/local-payments");
+    const base = { accountTitle: "Shahab Khan" };
+
+    expect(validateLocalMethod({ ...base, kind: "sadapay", accountNumber: "03001234567" })).toBeNull();
+    expect(validateLocalMethod({ ...base, kind: "jazzcash", accountNumber: "+92 300 1234567" })).toBeNull();
+    expect(validateLocalMethod({ ...base, kind: "easypaisa", accountNumber: "0345-1234567" })).toBeNull();
+    expect(validateLocalMethod({ ...base, kind: "bank", accountNumber: "PK36SCBL0000001123456702" })).toBeNull();
+    expect(validateLocalMethod({ ...base, kind: "bank", accountNumber: "1234567890" })).toBeNull();
+
+    // Wrong lengths / formats must be refused, not saved and shown to a paying customer.
+    expect(validateLocalMethod({ ...base, kind: "sadapay", accountNumber: "030012345" })).toMatch(/03/);
+    expect(validateLocalMethod({ ...base, kind: "jazzcash", accountNumber: "12345678901" })).toMatch(/03/);
+    expect(validateLocalMethod({ ...base, kind: "bank", accountNumber: "PK36XXXX" })).toMatch(/IBAN/);
+    expect(validateLocalMethod({ ...base, kind: "sadapay", accountTitle: "AB", accountNumber: "03001234567" })).toMatch(/title/);
+  });
+
+  it("only accepts http(s) payment links", async () => {
+    const { validatePaymentLink } = await import("@/lib/local-payments");
+    expect(validatePaymentLink("https://sadapay.pk/abc")).toBeNull();
+    expect(validatePaymentLink("")).toBeNull();
+    expect(validatePaymentLink(null)).toBeNull();
+    expect(validatePaymentLink("javascript:alert(1)")).toMatch(/https/);
+    expect(validatePaymentLink("sadapay.pk/abc")).toMatch(/full URL/);
+  });
+
+  it("computes the period end for both cycles", async () => {
+    const { periodEndFrom } = await import("@/lib/local-payments");
+    const from = new Date("2026-01-31T10:00:00.000Z");
+    expect(periodEndFrom("monthly", from).slice(0, 7)).toBe("2026-03"); // JS month rollover, never a crash
+    expect(periodEndFrom("annual", new Date("2026-08-09T10:00:00Z")).slice(0, 4)).toBe("2027");
+  });
+
+  it("masks an account number for logs", async () => {
+    const { maskAccountNumber } = await import("@/lib/local-payments");
+    expect(maskAccountNumber("03001234567")).toBe("•••••••4567");
+    expect(maskAccountNumber("1234")).toBe("••••");
+  });
 });

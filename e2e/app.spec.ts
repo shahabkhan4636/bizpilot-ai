@@ -288,7 +288,9 @@ test("settings, billing and admin pages enforce their guards", async ({ page }) 
   await expect(page.getByText("Team members")).toBeVisible();
 
   await page.goto("/billing");
-  await expect(page.getByText("Stripe is not configured", { exact: true })).toBeVisible();
+  // Card checkout is honestly disabled, and the page points at the rupee path instead.
+  await expect(page.getByText("Card payments (Stripe) are not configured")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open local payments" })).toBeVisible();
 
   // Not a super admin -> /admin redirects to the dashboard.
   await page.goto("/admin");
@@ -459,7 +461,7 @@ test("billing page reports the missing Stripe config and never invents invoices"
   await login(page, userB);
   await page.goto("/billing");
   await expect(page.getByRole("heading", { name: "Billing" })).toBeVisible();
-  await expect(page.getByText("Stripe is not configured", { exact: true })).toBeVisible();
+  await expect(page.getByText("Card payments (Stripe) are not configured")).toBeVisible();
   await expect(page.getByRole("heading", { name: /Invoices/ })).toBeVisible();
   await expect(page.getByText("No invoices recorded")).toBeVisible();
   await expect(page.getByText("$29.00").first()).toBeVisible();
@@ -775,5 +777,71 @@ test("a lead converts to a customer exactly once, and the lead links to it", asy
   await expect(page.getByText(/Won/i).first()).toBeVisible();
 
   await page.goto(customerUrl);
+  await context.close();
+});
+
+test("SadaPay local payment: configure, submit, approve, and the plan really upgrades", async ({ browser }) => {
+  const owner = { ...userA, email: `pay.${stamp}@vertex.example` };
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await signup(page, owner);
+
+  // 1. Owner adds their SadaPay wallet (validated format, not trusted blindly).
+  await page.goto("/billing/local");
+  await page.getByLabel("Method").selectOption("sadapay");
+  await page.getByLabel("Account title *").fill("Shahab Khan");
+  await page.getByLabel("Account / wallet number *").fill("03001234567");
+  await page.getByRole("button", { name: "Add payment method" }).click();
+  await expect(page.getByText(/SadaPay details saved/)).toBeVisible({ timeout: 30_000 });
+  await page.reload();
+  await expect(page.getByText("03001234567").first()).toBeVisible();
+
+  // 2. A bad wallet number is refused, so a paying customer never sees it.
+  //    (The title is required by the browser too, so fill it to reach the server.)
+  await page.getByLabel("Account title *").fill("Shahab Khan");
+  await page.getByLabel("Account / wallet number *").fill("12345");
+  await page.getByRole("button", { name: "Add payment method" }).click();
+  await expect(page.getByText(/start with 03/)).toBeVisible();
+
+  // 3. Submit a claim for the Professional plan (this is the customer's side).
+  await page.getByLabel("Plan").selectOption("professional");
+  await page.getByLabel("Amount sent (Rs) *").fill("22200");
+  await page.getByLabel("Transaction ID / reference *").fill(`SP-${stamp}`);
+  await page.getByRole("button", { name: "I have sent this payment" }).click();
+  await expect(page.getByText(/Payment submitted/)).toBeVisible({ timeout: 30_000 });
+  await page.reload();
+  await expect(page.getByText("pending").first()).toBeVisible();
+
+  // 4. Submitting twice must not create a second claim.
+  await page.getByLabel("Amount sent (Rs) *").fill("22200");
+  await page.getByLabel("Transaction ID / reference *").fill(`SP-${stamp}-2`);
+  await page.getByRole("button", { name: "I have sent this payment" }).click();
+  await expect(page.getByText(/already have a payment waiting for approval/)).toBeVisible();
+
+  // 5. Before approval the workspace is still on the trial plan.
+  await page.goto("/billing");
+  await expect(page.getByText("Starter").first()).toBeVisible();
+
+  // 6. Approve it — this is what activates the plan.
+  await page.goto("/billing/local");
+  await page.getByRole("button", { name: "Approve & activate" }).click();
+  await expect(page.getByText("approved").first()).toBeVisible({ timeout: 30_000 });
+
+  // 7. The upgrade is real: the billing page now shows Professional as the active plan.
+  await page.goto("/billing");
+  await expect(page.getByText("Professional").first()).toBeVisible();
+  await expect(page.getByText(/active/i).first()).toBeVisible();
+
+  // 8. And a second approval attempt on the same request cannot double-extend it.
+  await page.goto("/billing/local");
+  await expect(page.getByRole("button", { name: "Approve & activate" })).toHaveCount(0);
+
+  // 9. The approval is announced to the workspace, and the dashboard activity feed
+  //    records it — the money path is never silent.
+  await page.goto("/notifications");
+  await expect(page.getByText(/Plan activated/i).first()).toBeVisible({ timeout: 15_000 });
+  await page.goto("/dashboard");
+  await expect(page.getByText(/Payment approved/i).first()).toBeVisible({ timeout: 15_000 });
+
   await context.close();
 });
