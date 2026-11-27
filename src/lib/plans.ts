@@ -1,6 +1,8 @@
 import { all, get, run } from "./db";
 import { newId } from "./ids";
 import { nowIso } from "./utils";
+import { superAdminEmail } from "./owner";
+import { UNLIMITED } from "./limits";
 
 export type PlanRow = {
   code: string;
@@ -28,14 +30,53 @@ export type PlanFeatures = {
   white_label?: boolean;
 };
 
-export type EffectivePlan = PlanRow & { featuresParsed: PlanFeatures };
+export type EffectivePlan = PlanRow & {
+  featuresParsed: PlanFeatures;
+  /** True for the platform owner's own workspace — the only plan with no limits. */
+  isPlatformOwner: boolean;
+};
 
 export const DEFAULT_PLAN_CODE = "starter";
+
+/** Every feature switched on, for the workspace that owns the platform. */
+export const ALL_FEATURES: PlanFeatures = {
+  crm: true,
+  proposals: true,
+  ai_assistant: true,
+  automations: true,
+  documents: true,
+  analytics: "advanced",
+  multi_workspace: true,
+  white_label: true,
+};
+
+/**
+ * Is this the platform owner's own workspace?
+ *
+ * Decided by data, not by a flag: the workspace must have the `ADMIN_EMAIL` account
+ * as a member with role `owner`. Being *invited into* a customer's workspace (as
+ * admin or viewer) must never hand that customer unlimited limits — that would turn
+ * a support gesture into free seats and free AI for a paying customer — so the role
+ * check is part of the rule, and an unset `ADMIN_EMAIL` means nobody qualifies.
+ */
+export function isPlatformOwnerWorkspace(organizationId: string): boolean {
+  const email = superAdminEmail();
+  if (!email) return false;
+  const row = get<{ c: number }>(
+    `select count(*) as c
+       from organization_members m
+       join profiles p on p.id = m.user_id
+      where m.organization_id = ? and m.role = 'owner' and lower(trim(p.email)) = ?`,
+    [organizationId, email]
+  );
+  return Number(row?.c ?? 0) > 0;
+}
 
 export function listPlans(): EffectivePlan[] {
   return all<PlanRow>("select * from plans where is_active = 1 order by sort_order asc").map((p) => ({
     ...p,
     featuresParsed: safeParse<PlanFeatures>(p.features, {}),
+    isPlatformOwner: false,
   }));
 }
 
@@ -62,7 +103,11 @@ export function getEffectivePlan(organizationId: string): EffectivePlan {
     row ??
     get<PlanRow>("select * from plans where code = ?", [DEFAULT_PLAN_CODE]) ??
     ({} as PlanRow);
-  const effective = { ...(plan as PlanRow), featuresParsed: safeParse<PlanFeatures>((plan as PlanRow).features, {}) };
+  const effective: EffectivePlan = {
+    ...(plan as PlanRow),
+    featuresParsed: safeParse<PlanFeatures>((plan as PlanRow).features, {}),
+    isPlatformOwner: false,
+  };
 
   // Founding Member: the price is locked in `founding_memberships`, and the seats
   // that come with it were agreed in PHASE-0 (Starter limits, 3 members). Read from
@@ -74,11 +119,25 @@ export function getEffectivePlan(organizationId: string): EffectivePlan {
   if (founding && Number(founding.member_limit) > 0) {
     effective.member_limit = Number(founding.member_limit);
   }
+
+  // The platform owner's own workspace has no limits and every feature. Applied last
+  // so it wins over both the catalogue and a Founding Member seat count.
+  if (isPlatformOwnerWorkspace(organizationId)) {
+    effective.isPlatformOwner = true;
+    effective.lead_limit = UNLIMITED;
+    effective.member_limit = UNLIMITED;
+    effective.ai_generation_limit = UNLIMITED;
+    effective.automation_limit = UNLIMITED;
+    effective.document_limit = UNLIMITED;
+    effective.featuresParsed = { ...ALL_FEATURES };
+  }
   return effective;
 }
 
 /** Only paid/trialing subscriptions unlock paid features. */
 export function subscriptionIsUsable(organizationId: string): boolean {
+  // The owner never buys from themselves, so their workspace is always usable.
+  if (isPlatformOwnerWorkspace(organizationId)) return true;
   const sub = get<{ status: string; trial_ends_at: string | null }>(
     "select status, trial_ends_at from subscriptions where organization_id = ?",
     [organizationId]

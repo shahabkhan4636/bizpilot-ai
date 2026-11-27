@@ -7,6 +7,7 @@ import { Alert } from "@/components/ui/alert";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { generateContentAction, saveDraftAction, approveAndSendAction, type AiState } from "@/lib/actions/ai";
 import { AI_KINDS, AI_KIND_LABEL } from "@/lib/ai";
+import { limitLabel } from "@/lib/limits";
 
 export function AiWorkspace({
   leads,
@@ -72,7 +73,7 @@ export function AiWorkspace({
         <form id="ai-generate-form" action={generate} className="space-y-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface))] p-4">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold">Generate content</h2>
-            <span className="text-xs text-[hsl(var(--fg-muted))]">{usage} / {limit} this month</span>
+            <span className="text-xs text-[hsl(var(--fg-muted))]">{usage} / {limitLabel(limit)} this month</span>
           </div>
 
           {!aiConfigured ? (

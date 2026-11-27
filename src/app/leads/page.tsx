@@ -15,6 +15,7 @@ import { listMembers } from "@/lib/actions/leads";
 import { all, get } from "@/lib/db";
 import { formatMoney, formatDate } from "@/lib/utils";
 import { LEAD_STATUS_LABEL, type LeadStatus } from "@/lib/csv";
+import { limitLabel } from "@/lib/limits";
 
 export const metadata: Metadata = { title: "Leads", robots: { index: false } };
 
@@ -123,7 +124,7 @@ export default async function LeadsPage({
     >
       <PageHeader
         title="Leads"
-        description={`${total} lead${total === 1 ? "" : "s"} in this view · ${ctx.usage.leads} of ${ctx.plan.lead_limit.toLocaleString()} used on the ${ctx.plan.name} plan`}
+        description={`${total} lead${total === 1 ? "" : "s"} in this view · ${ctx.usage.leads} of ${limitLabel(ctx.plan.lead_limit)} used on the ${ctx.plan.name} plan`}
         actions={
           <>
             <a
@@ -142,7 +143,7 @@ export default async function LeadsPage({
       {ctx.usage.leads >= ctx.plan.lead_limit ? (
         <div className="mb-4">
           <Alert tone="danger" title="Lead limit reached">
-            You are at {ctx.usage.leads} of {ctx.plan.lead_limit} leads. <Link href="/billing" className="underline">Upgrade your plan</Link> to keep adding records.
+            You are at {ctx.usage.leads} of {limitLabel(ctx.plan.lead_limit)} leads. <Link href="/billing" className="underline">Upgrade your plan</Link> to keep adding records.
           </Alert>
         </div>
       ) : null}
@@ -150,7 +151,7 @@ export default async function LeadsPage({
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <StatCard label="Open pipeline" value={formatMoney(totals.pipeline)} />
         <StatCard label="Won value" value={formatMoney(totals.won)} tone="good" />
-        <StatCard label="Leads in workspace" value={String(ctx.usage.leads)} hint={`Limit ${ctx.plan.lead_limit.toLocaleString()}`} />
+        <StatCard label="Leads in workspace" value={String(ctx.usage.leads)} hint={`Limit ${limitLabel(ctx.plan.lead_limit)}`} />
       </div>
 
       <div className="mb-4">

@@ -5,6 +5,51 @@ platform-owner build-out plan (`PHASE-0-SETUP.md`).
 
 ---
 
+## Phase 4 — the platform owner's workspace is unlimited (2026-08-09)
+
+**What changed**
+
+- `src/lib/limits.ts` — `UNLIMITED` (`Number.POSITIVE_INFINITY`), `isUnlimited`,
+  `limitLabel` ("Unlimited" instead of ∞), `usageLabel`. `Infinity` rather than a big
+  constant on purpose: `used >= Infinity` is always false, so no caller can exceed it
+  by accident and no one has to know a magic number.
+- `isPlatformOwnerWorkspace(organizationId)` in `src/lib/plans.ts` — the workspace
+  where the **`ADMIN_EMAIL` account is a member with role `owner`**. Read from data,
+  never from a flag.
+- `getEffectivePlan` applies it **last**, after the catalogue and after the Founding
+  Member seat override: every numeric limit becomes `UNLIMITED`, every feature
+  (`ALL_FEATURES`) is on, and `plan.isPlatformOwner = true`. So the enforcement layer
+  itself changes — `checkLeadLimit`, `checkAiLimit`, `checkDocumentLimit`,
+  `checkAutomationLimit`, `checkFeature` and the seat check in `invites.ts` all inherit
+  the rule. No button was hidden to fake this.
+- `subscriptionIsUsable` is true for the owner's workspace: the vendor does not have
+  to buy their own product to keep paid features working.
+- Presentation: `limitLabel`/`usageLabel` now render "Unlimited" on the dashboard,
+  `/leads`, `/leads/import`, `/ai-assistant`, the AI workspace and `/billing`.
+- Badges: the sidebar and topbar show **Platform owner** for the `ADMIN_EMAIL`
+  account, and the `/admin` workspace list marks the owner's workspace (plan column
+  reads `unlimited` / `never billed`) so a workspace that is never billed is visibly
+  intentional rather than a bug.
+
+**Why**
+
+Two opposite failures were possible, so both are tested: (a) the owner being blocked
+by their own product's plan engine mid-demo, and (b) unlimited limits leaking to a
+paying customer. Being *invited into* a customer's workspace as admin or viewer must
+not give that customer free seats and free AI — hence the role check — and an unset
+`ADMIN_EMAIL` gives unlimited to **nobody**, which is the safe default.
+
+**Test evidence**
+
+- `npx vitest run` → **305 passed / 10 skipped (315 tests, 19 files)** (was 291/10;
+  +14 in `tests/platform-owner-unlimited.test.ts`).
+- `npx playwright test` → **31 passed** on SQLite **and** **31 passed** on Postgres
+  (new case: "the platform owner's own workspace is unlimited and badged, and a
+  customer's is not" — it asserts the customer sees a numeric limit and **no** badge).
+- `npm run verify` → typecheck, lint, unit tests, schema snapshot, build: **all gates green**.
+
+---
+
 ## Phase 3 — platform payments & Founding Member (2026-08-09)
 
 **What changed**

@@ -72,6 +72,14 @@ export function AppShell({
           {planName} plan · {role}
           {trialDaysLeft !== null && trialDaysLeft > 0 ? ` · trial ends in ${trialDaysLeft}d` : ""}
         </p>
+        {user.isSuperAdmin ? (
+          <span
+            data-testid="platform-owner-badge"
+            className="mt-1 inline-flex items-center gap-1 rounded-full bg-brand-100 px-2 py-0.5 text-[11px] font-semibold text-brand-800 dark:bg-brand-900/50 dark:text-brand-200"
+          >
+            <ShieldCheck className="h-3 w-3" /> Platform owner
+          </span>
+        ) : null}
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-3 scrollbar-thin">
@@ -156,7 +164,10 @@ export function AppShell({
           </button>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold">{org.name}</p>
-            <p className="text-xs text-[hsl(var(--fg-muted))]">{planName} plan</p>
+            <p className="text-xs text-[hsl(var(--fg-muted))]">
+              {planName} plan
+              {user.isSuperAdmin ? " · platform owner (unlimited)" : ""}
+            </p>
           </div>
           <div className="ml-auto flex items-center gap-2">
             {canWriteLeads ? (

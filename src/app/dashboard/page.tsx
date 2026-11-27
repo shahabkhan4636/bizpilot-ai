@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/ui/table";
 import { all, get } from "@/lib/db";
 import { formatMoney, relativeTime, percent } from "@/lib/utils";
 import { LEAD_STATUS_LABEL, type LeadStatus } from "@/lib/csv";
+import { limitLabel, usageLabel } from "@/lib/limits";
 
 export const metadata: Metadata = { title: "Dashboard", robots: { index: false } };
 
@@ -216,7 +217,7 @@ export default async function DashboardPage() {
           <CardContent className="space-y-2 text-sm">
             <Row label="Leads scored" value={`${aiScored.c} of ${totals.total}`} />
             <Row label="Average score" value={aiScored.avg ? String(Math.round(aiScored.avg)) : "—"} />
-            <Row label="AI generations this month" value={`${ctx.usage.aiThisMonth} / ${ctx.plan.ai_generation_limit.toLocaleString()}`} />
+            <Row label="AI generations this month" value={usageLabel(ctx.usage.aiThisMonth, ctx.plan.ai_generation_limit)} />
             <Row label="Proposals sent" value={String(proposals.sent ?? 0)} />
             <Row label="Proposals accepted" value={String(proposals.accepted ?? 0)} />
             <Row label="Accepted value" value={formatMoney(proposals.value ?? 0)} />
@@ -264,7 +265,7 @@ export default async function DashboardPage() {
       {ctx.usage.leads >= ctx.plan.lead_limit ? (
         <div className="mt-4">
           <Alert tone="danger" title="Lead limit reached">
-            <span className="inline-flex items-center gap-1"><AlertTriangle className="h-4 w-4" /> You have used {ctx.usage.leads} of {ctx.plan.lead_limit} leads. Upgrade to keep capturing.</span>
+            <span className="inline-flex items-center gap-1"><AlertTriangle className="h-4 w-4" /> You have used {ctx.usage.leads} of {limitLabel(ctx.plan.lead_limit)} leads. Upgrade to keep capturing.</span>
           </Alert>
         </div>
       ) : null}

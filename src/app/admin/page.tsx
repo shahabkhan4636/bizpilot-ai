@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { PlanEditor, OrgActions } from "@/components/admin/admin-forms";
 import { all, get } from "@/lib/db";
+import { isPlatformOwnerWorkspace } from "@/lib/plans";
 import { isStripeConfigured } from "@/lib/stripe";
 import { isAiConfigured } from "@/lib/ai";
 import { isEmailConfigured } from "@/lib/email";
@@ -43,6 +44,10 @@ export default async function AdminPage() {
             (select status from subscriptions s where s.organization_id = o.id) as status
        from organizations o order by o.created_at desc limit 100`
   );
+
+  // Which workspaces are the platform owner's own? Shown as a badge so a workspace
+  // that is never billed and never limited is obviously intentional, not a bug.
+  const ownerWorkspaceIds = new Set(orgs.filter((org) => isPlatformOwnerWorkspace(org.id)).map((org) => org.id));
 
   const auditLogs = all<{ id: string; action: string; actor_id: string | null; target_type: string | null; created_at: string }>(
     "select id, action, actor_id, target_type, created_at from audit_logs order by created_at desc limit 30"
@@ -133,8 +138,17 @@ export default async function AdminPage() {
           <TBody>
             {orgs.map((o) => (
               <TR key={o.id}>
-                <TD className="font-medium">{o.name}<p className="text-xs text-[hsl(var(--fg-muted))]">{o.slug}</p></TD>
-                <TD className="capitalize">{o.plan_code ?? "—"}<p className="text-xs text-[hsl(var(--fg-muted))]">{o.status ?? "no sub"}</p></TD>
+                <TD className="font-medium">
+                  <span className="flex flex-wrap items-center gap-1">
+                    {o.name}
+                    {ownerWorkspaceIds.has(o.id) ? <Badge tone="brand">Platform owner</Badge> : null}
+                  </span>
+                  <p className="text-xs text-[hsl(var(--fg-muted))]">{o.slug}</p>
+                </TD>
+                <TD className="capitalize">
+                  {ownerWorkspaceIds.has(o.id) ? "unlimited" : (o.plan_code ?? "—")}
+                  <p className="text-xs text-[hsl(var(--fg-muted))]">{ownerWorkspaceIds.has(o.id) ? "never billed" : (o.status ?? "no sub")}</p>
+                </TD>
                 <TD>{o.members}</TD>
                 <TD>{o.leads}</TD>
                 <TD className="text-[hsl(var(--fg-muted))]">{formatDate(o.created_at)}</TD>

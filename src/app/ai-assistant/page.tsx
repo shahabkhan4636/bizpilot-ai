@@ -13,6 +13,7 @@ import { isAiConfigured, aiConfig } from "@/lib/ai";
 import { aiUsageThisMonth } from "@/lib/ai-usage";
 import { isEmailConfigured } from "@/lib/email";
 import { relativeTime } from "@/lib/utils";
+import { limitLabel } from "@/lib/limits";
 
 export const metadata: Metadata = { title: "AI assistant", robots: { index: false } };
 
@@ -54,7 +55,7 @@ export default async function AiAssistantPage({ searchParams }: { searchParams: 
         </CardContent></Card>
         <Card><CardContent className="pt-4">
           <p className="text-xs uppercase tracking-wide text-[hsl(var(--fg-muted))]">Generations this month</p>
-          <p className="mt-1 text-sm font-semibold">{ctx.usage.aiThisMonth} of {ctx.plan.ai_generation_limit.toLocaleString()}</p>
+          <p className="mt-1 text-sm font-semibold">{ctx.usage.aiThisMonth} of {limitLabel(ctx.plan.ai_generation_limit)}</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
           <p className="text-xs uppercase tracking-wide text-[hsl(var(--fg-muted))]">Tokens this month</p>

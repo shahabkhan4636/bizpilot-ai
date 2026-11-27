@@ -66,6 +66,8 @@ Koi cheez "ho gaya" nahi likha jab tak wo chal kar test na hui ho.
 | **Founding Member offer** (Rs 1,500/mo, 10 slots, Starter limits + 3 seats, price `founding_memberships` mein lock — catalogue price barhne se purane member ka price nahi barhta) | ✅ Phase 3 | locked-price test · slot-exhaustion test · e2e friendly banner |
 | **Self-approval + `demo_mode`** (khud ki payment approve karna allowed, magar `self_approved` flag + audit; demo mode sirf owner ke apne claim pe) | ✅ Phase 3 | audit metadata assert · demo-mode tests |
 | **`/billing/local` regression lock** (shared `ensureSubscriptionPlan` refactor ke baad wahi behaviour) | ✅ Phase 3 | `tests/local-payments-regression.test.ts` (18) |
+| **Owner workspace unlimited** (limits `Infinity` enforcement layer pe — leads, AI, documents, automations, seats + saare features; badge sidebar aur `/admin` list mein) | ✅ Phase 4 | `tests/platform-owner-unlimited.test.ts` (14) · e2e "platform owner's own workspace is unlimited…" |
+| **Unlimited leak nahi hota** (customer ke workspace mein owner ko admin banaane se us customer ko free limits nahi milte; `ADMIN_EMAIL` unset ⇒ kisi ko unlimited nahi) | ✅ Phase 4 | owner-as-admin test · unset-env test |
 | **Platform owner = `ADMIN_EMAIL`** (single rule in `src/lib/owner.ts`; `/admin` returns **404** to everyone else; unset variable ⇒ no admin at all) | ✅ Phase 1 | `tests/owner.test.ts` (6) · `e2e/admin.spec.ts` (3) |
 | **Transfer-note collision bug** (do workspaces ka note same ho sakta tha) | ✅ fix + test | 5,000 workspace pe zero collision test |
 | **Idempotent webhooks + amount mismatch guard** (Rs 1 se plan unlock nahi hota) | ✅ tested | e2e replay + mismatch tests |

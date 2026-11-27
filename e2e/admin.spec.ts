@@ -183,3 +183,33 @@ test("platform payments: owner configures payouts, a customer claims, the owner 
   await strangerContext.close();
   await ownerContext.close();
 });
+
+test("the platform owner's own workspace is unlimited and badged, and a customer's is not", async ({ browser }) => {
+  // A customer workspace keeps the catalogue limits and shows no owner badge.
+  const customerContext = await browser.newContext();
+  const customerPage = await customerContext.newPage();
+  await ensureUser(customerPage, stranger);
+  await customerPage.goto("/dashboard");
+  await expect(customerPage.getByTestId("platform-owner-badge")).toHaveCount(0);
+  await customerPage.goto("/leads");
+  await expect(customerPage.getByText(/Limit \d/).first()).toBeVisible({ timeout: 20_000 });
+  await expect(customerPage.getByText(/Unlimited/)).toHaveCount(0);
+
+  // The platform owner's workspace is unlimited and says so in plain words.
+  const ownerContext = await browser.newContext();
+  const ownerPage = await ownerContext.newPage();
+  await ensureUser(ownerPage, owner);
+  await ownerPage.goto("/dashboard");
+  await expect(ownerPage.getByTestId("platform-owner-badge")).toBeVisible({ timeout: 20_000 });
+  await ownerPage.goto("/leads");
+  await expect(ownerPage.getByText(/Limit Unlimited/).first()).toBeVisible({ timeout: 20_000 });
+  await ownerPage.goto("/billing");
+  await expect(ownerPage.getByText(/Unlimited/).first()).toBeVisible({ timeout: 20_000 });
+
+  // ...and the admin workspace list marks it, so a never-billed workspace is visibly intentional.
+  await ownerPage.goto("/admin");
+  await expect(ownerPage.getByText("Platform owner").first()).toBeVisible({ timeout: 20_000 });
+
+  await customerContext.close();
+  await ownerContext.close();
+});

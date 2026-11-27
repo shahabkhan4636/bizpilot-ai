@@ -13,6 +13,7 @@ import { listPlans } from "@/lib/plans";
 import { all } from "@/lib/db";
 import { isStripeConfigured, stripePriceId } from "@/lib/stripe";
 import { formatMoney, formatDate, relativeTime } from "@/lib/utils";
+import { limitLabel } from "@/lib/limits";
 
 export const metadata: Metadata = { title: "Billing", robots: { index: false } };
 
@@ -141,8 +142,8 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Current plan" value={ctx.plan.name} hint={sub ? `${sub.status}${sub.cancel_at_period_end ? " · cancels at period end" : ""}` : "no subscription row"} />
         <StatCard label="Billing cycle" value={cycle} hint={priceId ? `price ${priceId.slice(0, 14)}…` : "no price ID configured"} />
-        <StatCard label="Leads used" value={`${ctx.usage.leads} / ${ctx.plan.lead_limit.toLocaleString()}`} tone={ctx.usage.leads >= ctx.plan.lead_limit ? "warn" : "default"} />
-        <StatCard label="AI used" value={`${ctx.usage.aiThisMonth} / ${ctx.plan.ai_generation_limit.toLocaleString()}`} />
+        <StatCard label="Leads used" value={`${ctx.usage.leads} / ${limitLabel(ctx.plan.lead_limit)}`} tone={ctx.usage.leads >= ctx.plan.lead_limit ? "warn" : "default"} />
+        <StatCard label="AI used" value={`${ctx.usage.aiThisMonth} / ${limitLabel(ctx.plan.ai_generation_limit)}`} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">

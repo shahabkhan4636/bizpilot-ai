@@ -6,6 +6,7 @@ import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ImportForm } from "@/components/leads/import-form";
+import { limitLabel } from "@/lib/limits";
 
 export const metadata: Metadata = { title: "Import leads", robots: { index: false } };
 
@@ -30,7 +31,7 @@ export default async function ImportLeadsPage() {
           <CardHeader>
             <CardTitle>Upload or paste</CardTitle>
             <CardDescription>
-              {ctx.usage.leads} of {ctx.plan.lead_limit.toLocaleString()} leads used on the {ctx.plan.name} plan — the importer stops at the limit and tells you.
+              {ctx.usage.leads} of {limitLabel(ctx.plan.lead_limit)} leads used on the {ctx.plan.name} plan — the importer stops at the limit and tells you.
             </CardDescription>
           </CardHeader>
           <CardContent><ImportForm /></CardContent>

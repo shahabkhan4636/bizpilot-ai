@@ -2,7 +2,13 @@
 
 _Last updated: 2026-08-09 · branch `main` · this file is the continuity record: read it first._
 
-**Newest work:** Phase 3 — platform payments (migration 011: `platform_settings`,
+**Newest work:** Phase 4 — the platform owner's own workspace is **unlimited at the
+enforcement layer** (`src/lib/limits.ts` + `isPlatformOwnerWorkspace` in `plans.ts`:
+every limit `Infinity`, every feature on, `subscriptionIsUsable` true), with a
+**Platform owner** badge in the sidebar and in the `/admin` workspace list. The rule
+requires the `ADMIN_EMAIL` account to be a member with role `owner`, so being invited
+into a customer's workspace never gives that customer unlimited limits, and an unset
+`ADMIN_EMAIL` gives unlimited to nobody. **Earlier:** Phase 3 — platform payments (migration 011: `platform_settings`,
 `platform_payment_claims`, `founding_memberships`). A customer sends rupees to the
 owner's **own** wallet/IBAN (numbers typed by the owner on `/admin/platform-payments`,
 never in source), submits the transaction ID on `/billing/platform`, and the owner's
@@ -30,13 +36,13 @@ asserted — the verification commands and their real output are in `PHASE-3-REP
 | --- | --- | --- |
 | Types | `npx tsc --noEmit` | ✅ clean, strict, 0 `any` |
 | Lint | `npx eslint .` | ✅ 0 errors / 0 warnings |
-| Unit + integration | `npx vitest run` | ✅ 291 passed, 10 skipped (18 files) |
-| E2E on PostgreSQL | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ 30 passed |
-| E2E on SQLite | `npx playwright test` | ✅ 30 passed |
+| Unit + integration | `npx vitest run` | ✅ 305 passed, 10 skipped (19 files) |
+| E2E on PostgreSQL | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ 31 passed |
+| E2E on SQLite | `npx playwright test` | ✅ 31 passed |
 | All gates | `npm run verify` (add `-- --e2e` for the suite) | ✅ green |
 | Production build | `npm run build` | ✅ 36 routes |
 | Readiness probe | `GET /api/readiness` | ✅ 200 with provider warnings |
-| Fresh-database path | `db:migrate` → `seed` → e2e on an empty Postgres | ✅ 36 tables, 83 policies, 11 migrations, 30 e2e journeys |
+| Fresh-database path | `db:migrate` → `seed` → e2e on an empty Postgres | ✅ 36 tables, 83 policies, 11 migrations, 31 e2e journeys |
 | Provider behaviour | `npx vitest run tests/providers.test.ts` | ✅ 15 cases against a real HTTP double |
 
 ## Decisions worth not re-litigating
