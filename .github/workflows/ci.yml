@@ -1,13 +1,22 @@
 name: CI
 
+# The gates here are the same ones `npm run verify` runs locally, plus the e2e
+# suite against a real PostgreSQL service — so a green build here means the
+# Postgres path (migrations, RLS, pg bridge) actually works, not just SQLite.
+
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  sqlite:
-    name: SQLite engine
+  gates:
+    name: Types, lint, unit tests, build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,47 +24,111 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm ci --no-audit --no-fund
-      - run: npx tsc --noEmit
-      - run: npx eslint .
-      - run: npm run db:migrate
-      - run: npx vitest run
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npx eslint .
+      - name: Schema snapshot is in sync with migrations
+        run: node scripts/build-schema.mjs --check
+      - name: Unit + integration tests
+        run: npx vitest run
+      - name: Production build
+        run: npm run build
 
   postgres:
-    name: PostgreSQL engine
+    name: Migrations, RLS and e2e on PostgreSQL
     runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:17
         env:
-          POSTGRES_DB: bizpilot
           POSTGRES_USER: bizpilot
           POSTGRES_PASSWORD: bizpilot
+          POSTGRES_DB: bizpilot
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U bizpilot -d bizpilot"
-          --health-interval 5s --health-timeout 5s --health-retries 20
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     env:
       DATABASE_URL: postgres://bizpilot:bizpilot@127.0.0.1:5432/bizpilot
       BIZPILOT_ENGINE: postgres
-      RLS_LIVE_URL: postgres://bizpilot:bizpilot@127.0.0.1:5432/bizpilot
-      ADMIN_LIVE_URL: postgres://bizpilot:bizpilot@127.0.0.1:5432/bizpilot
+      SESSION_SECRET: ci-only-not-a-real-secret
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3100
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-      - run: npm ci --no-audit --no-fund
-      - run: node scripts/migrate-pg.mjs
-      - name: Assert the schema really landed
+      - run: npm ci
+
+      - name: Apply migrations
         run: |
-          psql "$DATABASE_URL" -c "select count(*) from information_schema.tables where table_schema='public';"
-          psql "$DATABASE_URL" -c "select count(*) from pg_policies where schemaname='public';"
-      - run: npx tsc --noEmit
-      - run: npx eslint .
-      - run: npx vitest run
-      - run: npx playwright install --with-deps chromium
-      - run: npx playwright test
+          node scripts/db-migrate.mjs
+          node scripts/db-migrate.mjs --status
+
+      - name: Assert the schema is what we expect
+        run: |
+          set -euo pipefail
+          q() { psql "$DATABASE_URL" -tAc "$1" | tr -d ' '; }
+          tables=$(q "select count(*) from information_schema.tables where table_schema='public'")
+          rls=$(q "select count(distinct tablename) from pg_policies where schemaname='public'")
+          policies=$(q "select count(*) from pg_policies where schemaname='public'")
+          migrations=$(q "select count(*) from schema_migrations")
+          plans=$(q "select count(*) from plans")
+          echo "tables=$tables rls=$rls policies=$policies migrations=$migrations plans=$plans"
+          test "$tables" -ge 28
+          test "$rls" -ge 26
+          test "$policies" -ge 80
+          test "$migrations" -ge 5
+          # subscriptions.plan_code references plans(code): an empty catalogue
+          # makes the first signup fail, so it is part of "migrated".
+          test "$plans" -ge 4
+
+      - name: Seed smoke test (migrate → seed must work on a clean database)
+        run: |
+          set -euo pipefail
+          node scripts/seed.mjs --demo --email demo@ci.test --password 'CiDemoPass123' --name 'CI Demo' | tail -5
+          psql "$DATABASE_URL" -tAc "select count(*) from profiles where email = 'demo@ci.test'" | grep -qx 1
+          psql "$DATABASE_URL" -tAc "select count(*) from leads" | grep -qE '^[0-9]+$'
+          # clean up so the e2e run starts from an empty database
+          psql "$DATABASE_URL" -c "truncate organizations, profiles, sessions cascade" >/dev/null
+
+      - name: Migration round trip is reversible
+        run: |
+          node scripts/db-migrate.mjs --down 1
+          node scripts/db-migrate.mjs
+          node scripts/db-migrate.mjs --status
+
+      - name: Backup and restore into a fresh database
+        run: |
+          set -euo pipefail
+          node scripts/backup.mjs --out /tmp/ci-backups
+          dump=$(ls -t /tmp/ci-backups/*.sql.gz | head -1)
+          psql "postgres://bizpilot:bizpilot@127.0.0.1:5432/postgres" \
+            -c "drop database if exists bizpilot_restore" \
+            -c "create database bizpilot_restore"
+          node scripts/restore.mjs "$dump" --yes \
+            --target postgres://bizpilot:bizpilot@127.0.0.1:5432/bizpilot_restore
+          restored=$(psql "postgres://bizpilot:bizpilot@127.0.0.1:5432/bizpilot_restore" \
+            -tAc "select count(*) from information_schema.tables where table_schema='public'")
+          echo "restored tables=$restored"
+          test "$restored" -ge 28
+
+      - name: E2E journeys (A–G) against PostgreSQL
+        run: npx playwright test
         env:
-          NEXT_PUBLIC_APP_URL: http://127.0.0.1:3100
+          DATABASE_URL: postgres://bizpilot:bizpilot@127.0.0.1:5432/bizpilot
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

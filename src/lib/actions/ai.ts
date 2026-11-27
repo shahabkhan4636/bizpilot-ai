@@ -7,6 +7,7 @@ import { nowIso } from "@/lib/utils";
 import { requireAuth } from "@/lib/auth";
 import { audit, logActivity } from "@/lib/audit";
 import { checkAiLimit, checkFeature, recordUsage } from "@/lib/plans";
+import { recordAiUsage } from "@/lib/ai-usage";
 import { sendEmail, isEmailConfigured } from "@/lib/email";
 import { generateText, buildContentPrompt, AI_KINDS, AI_KIND_LABEL, type AiKind } from "@/lib/ai";
 import { ValidationError, str, optionalStr, oneOf, email as emailField } from "@/lib/validate";
@@ -20,6 +21,8 @@ export type AiState = {
   method?: "ai" | "not_configured" | "rate_limited" | "provider_error" | "empty";
   kind?: string;
   approved?: boolean;
+  /** Present when a generation succeeded: real token counts and priced cost. */
+  usage?: { tokens: number; costUsd: number | null } | null;
 } | null;
 
 function handle(e: unknown): AiState {
@@ -86,7 +89,18 @@ export async function generateContentAction(_prev: AiState, form: FormData): Pro
       [messageId, orgId, leadId, null, "outbound", "ai_draft", AI_KIND_LABEL[kind], body, "draft", nowIso()]
     );
 
-    if (result.ok) recordUsage(orgId, "ai_generation");
+    let usage: { tokens: number; costUsd: number | null } | null = null;
+    if (result.ok) {
+      recordUsage(orgId, "ai_generation");
+      // Tokens come from the provider's own usage object; cost from configured prices.
+      usage = recordAiUsage({
+        organizationId: orgId,
+        provider: result.provider,
+        model: result.model,
+        promptTokens: result.usage?.promptTokens ?? 0,
+        completionTokens: result.usage?.completionTokens ?? 0,
+      });
+    }
     logActivity({
       organizationId: orgId, actorId: user.id, entityType: "message", entityId: messageId,
       action: result.ok ? "ai.generated" : "ai.failed",
@@ -99,6 +113,7 @@ export async function generateContentAction(_prev: AiState, form: FormData): Pro
       messageId,
       method: result.ok ? "ai" : result.code,
       kind: AI_KIND_LABEL[kind],
+      usage,
       notice: result.ok ? undefined : `Provider state: ${result.code}`,
       error: result.ok ? undefined : result.message,
     };

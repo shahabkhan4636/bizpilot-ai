@@ -15,12 +15,14 @@ asserted — the verification commands and their real output are in `PHASE-3-REP
 | --- | --- | --- |
 | Types | `npx tsc --noEmit` | ✅ clean, strict, 0 `any` |
 | Lint | `npx eslint .` | ✅ 0 errors / 0 warnings |
-| Unit + integration | `npx vitest run` | ✅ 100 passed, 10 skipped |
+| Unit + integration | `npx vitest run` | ✅ 120 passed, 10 skipped |
 | E2E on PostgreSQL | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ 19 passed |
 | E2E on SQLite | `npx playwright test` | ✅ 19 passed |
 | All gates | `npm run verify` (add `-- --e2e` for the suite) | ✅ green |
 | Production build | `npm run build` | ✅ 36 routes |
 | Readiness probe | `GET /api/readiness` | ✅ 200 with provider warnings |
+| Fresh-database path | `db:migrate` → `seed` → e2e on an empty Postgres | ✅ 28 tables, 83 policies, 19 e2e journeys |
+| Provider behaviour | `npx vitest run tests/providers.test.ts` | ✅ 15 cases against a real HTTP double |
 
 ## Decisions worth not re-litigating
 
@@ -53,8 +55,8 @@ src/lib/                 db, auth, authz, permissions, plans, notifications, aut
                          proposal-math, theme
 src/middleware.ts        per-request CSP nonce + x-request-id
 src/lib/actions/         every server action, permission-gated
-sql/migrations/          001…004 with up/down variants per engine
-sql/rls.postgres.sql     83 policies across 26 tables
+sql/migrations/          001…005 with up/down variants per engine (005 = RLS, generated)
+sql/rls.postgres.sql     canonical 83 policies; migration 005 is generated from it
 tests/                   vitest: unit, rls.live, rls.postgres, rbac-notifications, email-verification
 e2e/app.spec.ts          Playwright journeys A–G
 scripts/                 db-migrate, build-schema, seed, pg-worker, migrate-pg, backup, restore, verify
@@ -71,9 +73,16 @@ npm run seed                    # demo workspace (SQLite) / --postgres for the P
 npm run dev
 ```
 
-Logins for the seeded demo data: `demo@bizpilot.local / BizPilotDemo123` (SQLite),
-`pgdemo@bizpilot.local / PostgresDemo123` (Postgres), super admin
-`shahabkhanprofessional@gmail.com / BizPilotAdmin123`. **Rotate these before any real deployment.**
+Seeding creates one real account and prints its password:
+
+```bash
+npm run seed                                        # admin@bizpilot.local, random password printed
+node scripts/seed.mjs --demo --email demo@bizpilot.local --password 'BizPilotDemo123' --name 'Demo Owner'
+npm run db:seed:pg                                  # same, against DATABASE_URL
+```
+
+Super admin: `shahabkhanprofessional@gmail.com / BizPilotAdmin123`. **Rotate every seeded password
+before any real deployment.**
 
 ## Known limits / next up
 
@@ -89,6 +98,9 @@ Logins for the seeded demo data: `demo@bizpilot.local / BizPilotDemo123` (SQLite
    so `-g` on a later test will fail on missing seed users by design.
 4. `data/bizpilot.db` is dev-only local state and is safe to delete; migrations recreate it.
 5. Rotate leaked tokens: GitHub `ghp_a5a6…`, Netlify `nfp_7CWU…`.
-6. Backups: `npm run db:backup` / `npm run db:restore` are verified for both engines (see
+6. AI spend is tracked from the provider's own token counts (`src/lib/ai-usage.ts`). Cost stays
+   "not priced" until `AI_PRICE_INPUT_PER_MTOK` / `AI_PRICE_OUTPUT_PER_MTOK` are set — `/api/readiness`
+   warns about exactly that, on purpose.
+7. Backups: `npm run db:backup` / `npm run db:restore` are verified for both engines (see
    `docs/BACKUP-AND-RESTORE.md`), but nothing schedules them — production needs a cron entry or the
    provider's own snapshots.

@@ -79,7 +79,14 @@ export function subscriptionIsUsable(organizationId: string): boolean {
   return false;
 }
 
-export type UsageMetric = "lead" | "ai_generation" | "document" | "automation_run" | "proposal";
+export type UsageMetric =
+  | "lead"
+  | "ai_generation"
+  | "ai_tokens"
+  | "ai_cost_micros"
+  | "document"
+  | "automation_run"
+  | "proposal";
 
 export function usageThisMonth(organizationId: string, metric: UsageMetric): number {
   const start = new Date();

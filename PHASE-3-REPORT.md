@@ -147,3 +147,64 @@ notification scoping, `?new=1` deep link refused for a viewer.
 Stripe (`STRIPE_*`), Resend (`RESEND_API_KEY`, `EMAIL_FROM`), AI (`AI_API_KEY`, `AI_MODEL`,
 `AI_BASE_URL`), Dropbox (`DROPBOX_APP_*`), production `DATABASE_URL`, Vercel. Each surface shows a
 "not configured" state and `/api/readiness` lists it under `warnings` — no surface pretends to work.
+
+## 7. Second verification pass — what re-running the blocked items found
+
+The provider integrations (Stripe, Resend, AI, Dropbox) were marked BLOCKED for want of credentials.
+They cannot be *live*-verified here, but the client contracts can be verified against a real HTTP
+double, and doing that meant first making the endpoints configurable
+(`EMAIL_API_URL`, `DROPBOX_CONTENT_URL`, `AI_BASE_URL`, all documented in `.env.example`).
+
+`tests/providers.test.ts` — 15 cases against a real local HTTP server, not a mocked `fetch`:
+
+| Case | Expected behaviour | Result |
+| --- | --- | --- |
+| AI 200 with `usage` | model, provider and the provider's own token counts returned | ✅ |
+| AI 500 then 200 | retried, second attempt wins | ✅ |
+| AI 429 twice | `rate_limited` after exactly `AI_MAX_ATTEMPTS` | ✅ |
+| AI 401 | **not** retried, message keeps `401` + provider text | ✅ |
+| AI empty content | `empty`, never success | ✅ |
+| AI non-JSON body | `provider_error` | ✅ |
+| AI no key | `not_configured`, zero network calls | ✅ |
+| AI score `187` | clamped to 100, `method: "ai"` | ✅ |
+| AI prose instead of JSON | falls back to the rule-based score | ✅ |
+| Email 200 | provider message id returned | ✅ |
+| Email 422 | `provider_error` with status + reason — never a false "sent" | ✅ |
+| Email no key | `not_configured`, zero network calls | ✅ |
+| Email transport failure | `provider_error`, never throws | ✅ |
+| Dropbox 200 | stored path returned | ✅ |
+| Dropbox 409 | provider error surfaced, not swallowed | ✅ |
+
+Two features the master prompt asks for were genuinely missing and are now implemented:
+
+- **Retries with backoff** (`AI_MAX_ATTEMPTS`, `AI_RETRY_BASE_MS`, `Retry-After` honoured), retrying
+  only 429/5xx — a 4xx is a misconfiguration and is returned immediately.
+- **Token + cost tracking** (`src/lib/ai-usage.ts`): tokens come from the provider's `usage` object,
+  cost from `AI_PRICE_INPUT_PER_MTOK` / `AI_PRICE_OUTPUT_PER_MTOK`, surfaced on the AI page and
+  aggregated per model per month. When prices are unset the cost is reported as "not priced", never
+  as a confident $0.00, and `/api/readiness` warns about it.
+
+### The bug this pass really found
+
+Running the **from-scratch** path (`create database` → `npm run db:migrate`) produced
+**0 RLS policies**: the 83 policies lived only in `sql/rls.postgres.sql`, applied by the docker/pg
+helper scripts, so any deployment built by following the docs would have had *no row-level
+security* while every existing dev database looked fine. Fixed by making RLS migration **005**,
+generated from that same file with `--check` drift detection, plus a `.down` that drops every policy
+and a documented SQLite no-op. Verified: fresh DB → 28 tables, 26 RLS tables, 83 policies, 5
+migrations; `--down 1` → 0 policies; re-`up` → 83 again; an already-policy'd database accepts 005
+idempotently.
+
+Three more defects surfaced by the same run:
+
+1. **`npm run db:migrate` left the plan catalogue empty** → the first signup failed with
+   `FOREIGN KEY constraint failed` because `subscriptions.plan_code` references `plans(code)`. The
+   runner now applies the idempotent plan seed and prints the count; CI asserts `plans >= 4`.
+2. **The snapshot baseline recorded only one migration.** `recordMigrationsAsApplied` asked "does the
+   table have any row?" *inside* the insert loop, so migration 001 was written and 002–005 were
+   skipped, leaving every other migration permanently "pending".
+3. **Baselined databases reported phantom drift** (`checksum snapshot → …`). The `snapshot` sentinel
+   is now treated as "no per-file checksum", not as edited history.
+
+Finally, `tests/ai-usage.test.ts` (5 cases) pins the accounting: pricing maths, unpriced-is-not-zero,
+per-model totals, and that one workspace can never read another's spend.

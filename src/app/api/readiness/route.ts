@@ -34,7 +34,22 @@ export async function GET() {
     stripe: isStripeConfigured(),
     email: isEmailConfigured(),
     ai: Boolean(process.env.AI_API_KEY),
+    dropbox: (process.env.DROPBOX_ACCESS_TOKEN ?? "").trim().length > 0,
   };
+
+  const warnings = Object.entries(providers)
+    .filter(([, configured]) => !configured)
+    .map(([name]) => `${name} is not configured`);
+
+  // Configured but unusable-for-accounting is a real operational gap: tokens will
+  // be recorded but the spend cannot be priced, so say so instead of showing $0.
+  if (
+    providers.ai &&
+    !(process.env.AI_PRICE_INPUT_PER_MTOK ?? "").trim() &&
+    !(process.env.AI_PRICE_OUTPUT_PER_MTOK ?? "").trim()
+  ) {
+    warnings.push("ai is configured but AI_PRICE_INPUT_PER_MTOK / AI_PRICE_OUTPUT_PER_MTOK are empty, so cost is not priced");
+  }
 
   const ready = Object.values(checks).every((c) => c.ok);
   return NextResponse.json(
@@ -44,9 +59,7 @@ export async function GET() {
       checks,
       providers,
       // A provider being absent is a configuration gap, not an outage.
-      warnings: Object.entries(providers)
-        .filter(([, configured]) => !configured)
-        .map(([name]) => `${name} is not configured`),
+      warnings,
       time: new Date().toISOString(),
     },
     { status: ready ? 200 : 503 }

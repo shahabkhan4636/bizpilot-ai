@@ -36,7 +36,7 @@ invented customer list and no fabricated social proof anywhere in the marketing 
 | Public lead capture API `/api/leads/capture` | Working when `LEAD_CAPTURE_KEY` is set |
 | Emails | Requires `RESEND_API_KEY`; without it the app says so and stores the message as approved-but-unsent |
 | Two engines, one API | **SQLite** by default; **PostgreSQL 17** automatically when `DATABASE_URL` is set. Same queries, same helpers — see section 7 |
-| Row level security | `sql/rls.postgres.sql`: 83 policies on all 26 tables, **proven twice** — 12 assertions on PGlite and 10 more on a live PostgreSQL 17 server from a non-owner role |
+| Row level security | migration `005_row_level_security` (generated from `sql/rls.postgres.sql`): 83 policies on all 26 tables, **proven twice** — 12 assertions on PGlite and 10 more on a live PostgreSQL 17 server from a non-owner role |
 
 **Honest limitations you must know before selling this:**
 

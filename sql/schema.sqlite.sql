@@ -1,6 +1,6 @@
 -- BizPilot AI — consolidated schema snapshot (GENERATED FILE)
 -- Source of truth: sql/migrations/*.up.sql. Regenerate with: npm run db:schema
--- 4 migration(s): 001_initial.up.sql, 002_roles_crm_notifications.up.sql, 003_role_permissions.up.sqlite.sql, 004_widen_invite_roles.up.sqlite.sql
+-- 5 migration(s): 001_initial.up.sql, 002_roles_crm_notifications.up.sql, 003_role_permissions.up.sqlite.sql, 004_widen_invite_roles.up.sqlite.sql, 005_row_level_security.up.sqlite.sql
 --
 -- Portable SQL: this exact file is applied to SQLite and to PostgreSQL, so the
 -- two deployments cannot diverge. Tenant isolation is enforced in application
@@ -411,3 +411,11 @@ drop table org_invites;
 alter table org_invites_new rename to org_invites;
 create index if not exists org_invites_org_idx on org_invites (organization_id);
 create index if not exists org_invites_email_idx on org_invites (email);
+
+-- ===== 005_row_level_security.up.sqlite.sql =====
+-- 005 — Row Level Security: SQLite has no policies.
+--
+-- Isolation on SQLite comes from the query layer (every statement is scoped by
+-- organization_id), which the test suite asserts. The Postgres variant of this
+-- migration creates the same 83 policies the production database runs on.
+select 1;

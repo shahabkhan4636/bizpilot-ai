@@ -37,19 +37,34 @@ Rules:
   use it when the database really was created from `sql/schema.sqlite.sql` or an equivalent dump.
   Using it to "fix" a failed migration leaves the schema wrong and the bookkeeping lying.
 - **Never edit an applied migration.** Add the next number instead; the checksum in
-  `schema_migrations` exists to catch this.
+  `schema_migrations` exists to catch this. The one exception is the literal `snapshot` checksum,
+  written when a database was created from the consolidated snapshot: there is no per-file checksum
+  to compare, so the runner treats it as unknown rather than as edited history.
 - **`sql/schema.sqlite.sql` is generated**: `npm run db:schema`. CI runs
   `node scripts/build-schema.mjs --check` and fails if the snapshot is stale.
 
 ## Row-level security
 
-`sql/rls.postgres.sql` creates 83 policies over 26 tables, all keyed on the caller's organisation
-membership. It is defence in depth: the application layer already scopes every query by
+The 83 policies over 26 tables ship **inside the migration chain** as
+`005_row_level_security` — a from-scratch `npm run db:migrate` is protected exactly like an upgraded
+database. (They used to live only in `sql/rls.postgres.sql`, applied by the docker helper scripts, so
+a fresh production deploy silently had *no* policies. Migration 005 is generated from that file by
+`npm run db:schema`, and `--check` fails if the two drift.)
+
+All policies are keyed on the caller's organisation membership. It is defence in depth: the application layer already scopes every query by
 `organization_id`, and RLS catches a query that forgets. Two things to remember when testing it:
 
 - the table **owner bypasses RLS** unless `FORCE ROW LEVEL SECURITY` is set, so tests connect as a
   non-owner role;
-- policy changes need `drop … cascade` on the way down (see `003_*.down.postgres.sql`).
+- policy changes need `drop … cascade` on the way down (see `003_*.down.postgres.sql`);
+- the SQLite variant of 005 is a documented no-op (SQLite has no policies; isolation there is the
+  query layer, asserted by the test suite).
+
+## Plan catalogue
+
+`npm run db:migrate` also applies `sql/seed_plans.sql` (idempotent upserts) and prints
+`✔ plan catalogue in place (4 plans)`. This is not cosmetic: `subscriptions.plan_code` references
+`plans(code)`, so an empty catalogue makes the very first signup fail with a foreign-key error.
 
 ## Test data
 

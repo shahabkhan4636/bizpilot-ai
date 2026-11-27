@@ -63,17 +63,18 @@ function recordMigrationsAsApplied(database: Database.Database): void {
     database.exec(
       "create table if not exists schema_migrations (id text primary key, name text not null, checksum text not null, applied_at text not null)"
     );
+    // Only baseline an empty bookkeeping table. The previous version asked
+    // "is there any row?" inside the insert loop, so it recorded a single
+    // migration and left every other one looking pending forever.
+    const recorded = Number(
+      (database.prepare("select count(*) as c from schema_migrations").get() as { c?: number } | undefined)?.c ?? 0
+    );
+    if (recorded > 0) return;
     const now = new Date().toISOString();
     const insert = database.prepare(
       "insert or ignore into schema_migrations (id, name, checksum, applied_at) values (?,?,?,?)"
     );
-    for (const id of ids) {
-      const row = database
-        .prepare("select name from schema_migrations limit 1")
-        .get() as { name?: string } | undefined;
-      if (row?.name) continue; // already baselined
-      insert.run(id, `${id}_snapshot`, "snapshot", now);
-    }
+    for (const id of ids) insert.run(id, `${id}_snapshot`, "snapshot", now);
   } catch {
     // Bookkeeping only: never block application startup because of it.
   }

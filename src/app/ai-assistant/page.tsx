@@ -9,7 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { AiWorkspace } from "@/components/ai/ai-workspace";
 import { recentDrafts } from "@/lib/actions/ai";
 import { all } from "@/lib/db";
-import { isAiConfigured } from "@/lib/ai";
+import { isAiConfigured, aiConfig } from "@/lib/ai";
+import { aiUsageThisMonth } from "@/lib/ai-usage";
 import { isEmailConfigured } from "@/lib/email";
 import { relativeTime } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ export default async function AiAssistantPage({ searchParams }: { searchParams: 
   );
   const drafts = await recentDrafts(ctx.orgId);
   const aiConfigured = isAiConfigured();
+  const usage = aiUsageThisMonth(ctx.orgId);
   const emailConfigured = isEmailConfigured();
 
   return (
@@ -42,7 +44,7 @@ export default async function AiAssistantPage({ searchParams }: { searchParams: 
         description="Nine content types with tone, language and objective controls. Every send needs human approval."
       />
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card><CardContent className="pt-4">
           <p className="text-xs uppercase tracking-wide text-[hsl(var(--fg-muted))]">AI provider</p>
           <p className="mt-1 flex items-center gap-2 text-sm font-semibold">
@@ -53,6 +55,22 @@ export default async function AiAssistantPage({ searchParams }: { searchParams: 
         <Card><CardContent className="pt-4">
           <p className="text-xs uppercase tracking-wide text-[hsl(var(--fg-muted))]">Generations this month</p>
           <p className="mt-1 text-sm font-semibold">{ctx.usage.aiThisMonth} of {ctx.plan.ai_generation_limit.toLocaleString()}</p>
+        </CardContent></Card>
+        <Card><CardContent className="pt-4">
+          <p className="text-xs uppercase tracking-wide text-[hsl(var(--fg-muted))]">Tokens this month</p>
+          <p className="mt-1 text-sm font-semibold">
+            {usage.totalTokens > 0 ? usage.totalTokens.toLocaleString() : "No calls yet"}
+            {usage.costUsd !== null ? (
+              <span className="ml-2 font-normal text-[hsl(var(--fg-muted))]">
+                ${usage.costUsd.toFixed(4)}
+              </span>
+            ) : null}
+          </p>
+          <p className="mt-1 text-xs text-[hsl(var(--fg-muted))]">
+            {usage.costUsd === null
+              ? "Cost is not priced: set AI_PRICE_INPUT_PER_MTOK / AI_PRICE_OUTPUT_PER_MTOK."
+              : `${usage.calls} call(s) on ${aiConfig().model}`}
+          </p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
           <p className="text-xs uppercase tracking-wide text-[hsl(var(--fg-muted))]">Email delivery</p>

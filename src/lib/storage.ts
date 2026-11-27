@@ -47,7 +47,8 @@ export async function deleteFileLocal(storagePath: string): Promise<void> {
 
 export async function uploadToDropbox(accessToken: string, dropboxPath: string, bytes: Buffer): Promise<{ ok: boolean; path?: string; message?: string }> {
   try {
-    const res = await fetch("https://content.dropboxapi.com/2/files/upload", {
+    const uploadUrl = (process.env.DROPBOX_CONTENT_URL ?? "https://content.dropboxapi.com/2/files/upload").trim();
+    const res = await fetch(uploadUrl, {
       method: "POST",
       headers: {
         authorization: `Bearer ${accessToken}`,

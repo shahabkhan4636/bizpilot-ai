@@ -17,7 +17,10 @@ export async function sendEmail(input: { to: string; subject: string; text: stri
     return { ok: false, code: "not_configured", message: "Email is not configured. Add RESEND_API_KEY to enable sending." };
   }
   try {
-    const res = await fetch("https://api.resend.com/emails", {
+    // Overridable so a self-hosted Resend-compatible proxy — and the integration
+    // test against a local double — use the same code path as production.
+    const endpoint = (process.env.EMAIL_API_URL ?? "https://api.resend.com/emails").trim();
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({

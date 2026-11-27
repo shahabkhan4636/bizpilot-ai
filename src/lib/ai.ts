@@ -6,15 +6,22 @@
  * fabricate generated content and never claim a message was produced by a model.
  */
 
+export type AiTokens = { promptTokens: number; completionTokens: number };
+
 export type AiResult =
-  | { ok: true; text: string; model: string; provider: string }
+  | { ok: true; text: string; model: string; provider: string; usage: AiTokens | null }
   | { ok: false; code: "not_configured" | "provider_error" | "rate_limited" | "empty"; message: string };
 
 export function aiConfig() {
+  const attempts = Number(process.env.AI_MAX_ATTEMPTS ?? "3");
   return {
     apiKey: process.env.AI_API_KEY ?? "",
+    // Any OpenAI-compatible endpoint: OpenAI, OpenRouter, Groq, vLLM, or a local
+    // stub in tests. Trailing slashes would produce `//chat/completions`.
     baseUrl: (process.env.AI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/+$/, ""),
     model: process.env.AI_MODEL ?? "gpt-4o-mini",
+    maxAttempts: Number.isFinite(attempts) ? Math.min(5, Math.max(1, Math.round(attempts))) : 3,
+    retryBaseMs: Number(process.env.AI_RETRY_BASE_MS ?? "400"),
   };
 }
 
@@ -41,6 +48,44 @@ export async function generateText(options: GenerateOptions): Promise<AiResult> 
     };
   }
 
+  // Retries are bounded and only cover failures that can succeed on a second try:
+  // 429 and 5xx. A 4xx (bad key, bad model name) is returned immediately — retrying
+  // a misconfiguration just burns time and hides the real message.
+  let attempt = 1;
+  let lastFailure: { status: number; detail: string } | null = null;
+  while (attempt <= cfg.maxAttempts) {
+    const attemptResult = await attemptRequest(cfg, options, attempt === cfg.maxAttempts);
+    if (attemptResult.kind === "done") return attemptResult.result;
+    lastFailure = attemptResult.failure;
+    if (attemptResult.kind === "fatal") break;
+    if (attempt < cfg.maxAttempts) {
+      const backoff = attemptResult.retryAfterMs ?? cfg.retryBaseMs * 2 ** (attempt - 1);
+      await new Promise((resolve) => setTimeout(resolve, Math.min(5_000, backoff)));
+    }
+    attempt += 1;
+  }
+
+  const status = lastFailure?.status ?? 0;
+  if (status === 429) {
+    return { ok: false, code: "rate_limited", message: "The AI provider rate-limited this request. Try again in a moment." };
+  }
+  return {
+    ok: false,
+    code: "provider_error",
+    message: `AI provider returned ${status || "an error"} after ${attempt - 1} attempt(s). ${(lastFailure?.detail ?? "").slice(0, 200)}`.trim(),
+  };
+}
+
+type AttemptOutcome =
+  | { kind: "done"; result: AiResult }
+  | { kind: "retry"; failure: { status: number; detail: string }; retryAfterMs?: number }
+  | { kind: "fatal"; failure: { status: number; detail: string } };
+
+async function attemptRequest(
+  cfg: ReturnType<typeof aiConfig>,
+  options: GenerateOptions,
+  isLastAttempt: boolean
+): Promise<AttemptOutcome> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 45_000);
 
@@ -64,32 +109,54 @@ export async function generateText(options: GenerateOptions): Promise<AiResult> 
       signal: controller.signal,
     });
 
-    if (res.status === 429) {
-      return { ok: false, code: "rate_limited", message: "The AI provider rate-limited this request. Try again in a moment." };
+    if (res.status === 429 || res.status >= 500) {
+      const detail = await res.text().catch(() => "");
+      const retryAfter = Number(res.headers.get("retry-after"));
+      return {
+        kind: isLastAttempt ? "fatal" : "retry",
+        failure: { status: res.status, detail },
+        retryAfterMs: Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : undefined,
+      };
     }
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
-      return {
-        ok: false,
-        code: "provider_error",
-        message: `AI provider returned ${res.status}. ${detail.slice(0, 200)}`.trim(),
-      };
+      // 4xx that is not a rate limit is a configuration problem: do not retry.
+      return { kind: "fatal", failure: { status: res.status, detail } };
     }
 
-    const data = (await res.json()) as {
+    const data = (await res.json().catch(() => null)) as {
       choices?: { message?: { content?: string } }[];
       model?: string;
-    };
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    } | null;
+    if (!data) {
+      return { kind: isLastAttempt ? "fatal" : "retry", failure: { status: res.status, detail: "unparseable JSON body" } };
+    }
     const text = data.choices?.[0]?.message?.content?.trim() ?? "";
-    if (!text) return { ok: false, code: "empty", message: "The AI provider returned an empty response." };
+    if (!text) return { kind: "done", result: { ok: false, code: "empty", message: "The AI provider returned an empty response." } };
 
-    return { ok: true, text, model: data.model ?? cfg.model, provider: new URL(cfg.baseUrl).host };
+    return {
+      kind: "done",
+      result: {
+        ok: true,
+        text,
+        model: data.model ?? cfg.model,
+        provider: new URL(cfg.baseUrl).host,
+        usage: {
+          promptTokens: Math.max(0, Math.round(Number(data.usage?.prompt_tokens ?? 0))),
+          completionTokens: Math.max(0, Math.round(Number(data.usage?.completion_tokens ?? 0))),
+        },
+      },
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown AI error";
+    const aborted = error instanceof Error && error.name === "AbortError";
+    if (!aborted && !isLastAttempt) {
+      return { kind: "retry", failure: { status: 0, detail: message } };
+    }
     return {
-      ok: false,
-      code: "provider_error",
-      message: message.includes("aborted") ? "The AI request timed out." : message,
+      kind: "fatal",
+      failure: { status: 0, detail: message.includes("aborted") ? "the request timed out" : message },
     };
   } finally {
     clearTimeout(timeout);

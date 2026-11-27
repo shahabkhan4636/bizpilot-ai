@@ -147,13 +147,39 @@ const applied = (await driver.query("select id, name, checksum, applied_at from 
 const byId = new Map(applied.map((r) => [r.id, r]));
 
 // drift detection
+// `snapshot` is the sentinel written when a database was created from the
+// consolidated snapshot (the app's boot path). There is no per-file checksum to
+// compare against in that case, so it is recorded as "unknown" rather than
+// reported as an edit to history.
+const BASELINE_CHECKSUM = "snapshot";
 for (const m of migrations) {
   const row = byId.get(m.id);
+  if (row && row.checksum === BASELINE_CHECKSUM) continue;
   if (row && row.checksum !== m.checksum) {
     console.error(
       `✖ ${m.name} changed after it was applied (checksum ${row.checksum} → ${m.checksum}).\n` +
         "  Add a new migration instead of editing history; existing databases will not re-run it."
     );
+    process.exit(1);
+  }
+}
+
+/**
+ * The plan catalogue is data, not schema, but it is required: `subscriptions.plan_code`
+ * references `plans(code)`, so a freshly migrated database with an empty catalogue
+ * fails the first signup with a foreign-key error. The statements are upserts, so
+ * running this on every migrate is safe and lets pricing change without code edits.
+ */
+async function seedPlans() {
+  const file = path.join(process.cwd(), "sql", "seed_plans.sql");
+  if (!fs.existsSync(file)) return;
+  try {
+    await driver.exec(fs.readFileSync(file, "utf8"));
+    const count = (await driver.query("select count(*) as c from plans")).rows[0].c;
+    console.log(`✔ plan catalogue in place (${Number(count)} plans)`);
+  } catch (error) {
+    console.error(`✖ could not apply the plan catalogue: ${error.message}`);
+    await driver.close();
     process.exit(1);
   }
 }
@@ -229,6 +255,7 @@ const pending = migrations.filter((m) => !byId.has(m.id) && (!limit || m.id <= l
 
 if (pending.length === 0) {
   console.log(`✔ up to date (${applied.length} migration(s) applied)`);
+  await seedPlans();
   await driver.close();
   process.exit(0);
 }
@@ -254,4 +281,5 @@ for (const m of pending) {
 
 const finalCount = (await driver.query("select count(*) as c from schema_migrations")).rows[0].c;
 console.log(`✔ ${pending.length} migration(s) applied · ${Number(finalCount)} total`);
+await seedPlans();
 await driver.close();
