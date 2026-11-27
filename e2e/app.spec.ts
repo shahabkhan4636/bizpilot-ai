@@ -295,9 +295,11 @@ test("settings, billing and admin pages enforce their guards", async ({ page }) 
   await expect(page.getByText("Card payments (Stripe) are not configured")).toBeVisible();
   await expect(page.getByRole("link", { name: "Open local payments" })).toBeVisible();
 
-  // Not a super admin -> /admin redirects to the dashboard.
-  await page.goto("/admin");
-  await page.waitForURL("**/dashboard", { timeout: 20_000 });
+  // Not the platform owner -> /admin answers 404 (not a redirect, not a 403:
+  // a redirect would confirm the admin area exists).
+  const adminResponse = await page.goto("/admin");
+  expect(adminResponse?.status()).toBe(404);
+  await expect(page.getByRole("heading", { name: "Admin panel" })).toHaveCount(0);
 });
 
 test("logout ends the session", async ({ page }) => {

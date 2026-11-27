@@ -12,6 +12,7 @@ import { createSession, setSessionCookie, clearSessionCookie } from "@/lib/sessi
 import { audit } from "@/lib/audit";
 import { rateLimit, LOGIN_LIMIT, LOGIN_WINDOW_SECONDS, SIGNUP_LIMIT, SIGNUP_WINDOW_SECONDS } from "@/lib/ratelimit";
 import { sendEmail, isEmailConfigured } from "@/lib/email";
+import { superAdminFlag } from "@/lib/owner";
 import { ValidationError, str, email as emailField } from "@/lib/validate";
 import { DEFAULT_PLAN_CODE } from "@/lib/plans";
 
@@ -62,13 +63,14 @@ export async function signupAction(_prev: ActionState, form: FormData): Promise<
     let slug = slugify(companyName) || "workspace";
     if (get("select id from organizations where slug = ?", [slug])) slug = `${slug}-${newToken(3).toLowerCase()}`;
 
-    // Bootstrap super-admin: only the exact address in ADMIN_EMAIL.
-    const adminEmail = (process.env.ADMIN_EMAIL ?? "").trim().toLowerCase();
-    const isSuperAdmin = adminEmail.length > 0 && email === adminEmail ? 1 : 0;
+    // Bootstrap super-admin: only the exact address in ADMIN_EMAIL — decided by the
+    // shared rule in src/lib/owner.ts so signup, the session and the /admin gate can
+    // never disagree about who the owner is.
+    const superAdmin = superAdminFlag(email);
 
     run(
       "insert into profiles (id, email, password_hash, full_name, is_super_admin, created_at, updated_at) values (?,?,?,?,?,?,?)",
-      [userId, email, hash, fullName, isSuperAdmin, now, now]
+      [userId, email, hash, fullName, superAdmin, now, now]
     );
     createdUserId = userId;
 

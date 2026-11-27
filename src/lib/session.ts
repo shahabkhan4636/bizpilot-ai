@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { newToken } from "./ids";
 import { addDays, nowIso } from "./utils";
 import { run, get } from "./db";
+import { superAdminFlag } from "./owner";
 
 const COOKIE_NAME = "bizpilot_session";
 const SESSION_DAYS = 30;
@@ -66,7 +67,9 @@ export function getUserBySessionToken(token: string | null): SessionUser | null 
     id: row.id,
     email: row.email,
     full_name: row.full_name,
-    is_super_admin: row.is_super_admin,
+    // Derived, not taken from the row: the env var is the source of truth, so a
+    // stale database flag can never keep an old account inside /admin.
+    is_super_admin: superAdminFlag(row.email),
     onboarded_at: row.onboarded_at,
   };
 }

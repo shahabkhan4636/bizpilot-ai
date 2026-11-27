@@ -43,6 +43,9 @@ export default defineConfig({
       // A test-only gateway secret so the real webhook route can be exercised end
       // to end (signature → approval → plan). Production uses the real merchant one.
       SADAPAY_WEBHOOK_SECRET: "e2e_sadapay_webhook_secret",
+      // The platform owner for the admin-gate tests. The app reads ADMIN_EMAIL and
+      // nothing else, so this is the only place the address is configured.
+      ADMIN_EMAIL: "owner@bizpilot.test",
     },
   },
 });

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { redirect } from "next/navigation";
+
 import { ShieldCheck } from "lucide-react";
 import { loadAppContext } from "@/lib/app-context";
+import { requireSuperAdmin } from "@/lib/auth";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader, StatCard } from "@/components/page-header";
 import { Alert } from "@/components/ui/alert";
@@ -21,9 +22,10 @@ import { formatDate, relativeTime, formatMoney } from "@/lib/utils";
 export const metadata: Metadata = { title: "Admin", robots: { index: false } };
 
 export default async function AdminPage() {
+  // Server-side gate first, before any data is read. A non-owner gets a 404 (see
+  // requireSuperAdmin) — hiding the sidebar link was never the gate.
+  await requireSuperAdmin();
   const ctx = await loadAppContext();
-  // Server-side role verification — the sidebar hiding the link is not the gate.
-  if (!ctx.user.is_super_admin) redirect("/dashboard");
 
   const plans = all<{
     code: string; name: string; price_monthly_cents: number; price_annual_cents: number; lead_limit: number;

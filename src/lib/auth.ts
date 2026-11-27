@@ -1,6 +1,7 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { get } from "./db";
 import { getUserBySessionToken, readSessionToken, type SessionUser } from "./session";
+import { isSuperAdmin } from "./owner";
 
 export type Membership = {
   organization_id: string;
@@ -57,10 +58,27 @@ export async function requireAuth(): Promise<AuthContext> {
   return { user, membership };
 }
 
+/**
+ * The only gate for `/admin` and everything under it.
+ *
+ * A signed-in non-owner gets **404, not 403 and not a redirect**: a 403 (or a
+ * redirect to a "forbidden" page) confirms that an admin area exists, which is
+ * information a stranger has no reason to have. `notFound()` renders the normal
+ * "page does not exist" response, so `/admin` is indistinguishable from a URL that
+ * was never built.
+ *
+ * With `ADMIN_EMAIL` unset, `isSuperAdmin()` is false for everyone — an
+ * unconfigured deployment has no admin panel at all rather than an unprotected one.
+ */
 export async function requireSuperAdmin(): Promise<SessionUser> {
   const user = await requireUser();
-  if (!user.is_super_admin) redirect("/dashboard?error=forbidden");
+  if (!isSuperAdmin(user)) notFound();
   return user;
+}
+
+/** Non-throwing form for callers that want to branch (e.g. rendering a link). */
+export function userIsSuperAdmin(user: SessionUser | null | undefined): boolean {
+  return isSuperAdmin(user);
 }
 
 export function isAdmin(role: string): boolean {

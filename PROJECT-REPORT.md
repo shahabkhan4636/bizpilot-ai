@@ -10,8 +10,8 @@ Koi cheez "ho gaya" nahi likha jab tak wo chal kar test na hui ho.
 | Code size | ~17,500 lines TypeScript/TSX · 38 library modules · 15 server-action modules · 30 components |
 | Routes | **34 pages** + **11 API endpoints** (incl. `POST /api/payments/webhook/<provider>`) |
 | Database | **9 migrations** · **32 tables** · Postgres 17.12 (Supabase: live) + SQLite (local) |
-| Tests | **221 unit/integration** (10 skipped by design) + **25 end-to-end journeys** |
-| E2E engines | SQLite **25/25** ✅ · PostgreSQL **25/25** ✅ |
+| Tests | **227 unit/integration** (10 skipped by design) + **28 end-to-end journeys** |
+| E2E engines | SQLite **28/28** ✅ · PostgreSQL **28/28** ✅ |
 | CI | `.github/workflows/verify.yml` (gates + Postgres job) · `backup.yml` (daily dump) |
 | Deployment | Vercel project configured — **code abhi deploy nahi hua** |
 | Live preview | `next start` chalta hua: `/`, `/login`, `/pricing`, `/billing/local` sab 200 |
@@ -60,6 +60,7 @@ Koi cheez "ho gaya" nahi likha jab tak wo chal kar test na hui ho.
 | **CI pipeline** (types, lint, tests, schema, build + real Postgres job + e2e) | ✅ commit shuda | `.github/workflows/verify.yml` |
 | **Scheduled backups** (daily `pg_dump` → artifact, 30 din) | ✅ commit shuda | `.github/workflows/backup.yml` |
 | **PKR-first launch copy** (Rs 8,200 / 22,200 / 41,800 / 83,800, SadaPay-first) | ✅ | `marketing/LAUNCH-KIT.md`, `docs/LAUNCH-RUNBOOK.md` |
+| **Platform owner = `ADMIN_EMAIL`** (single rule in `src/lib/owner.ts`; `/admin` returns **404** to everyone else; unset variable ⇒ no admin at all) | ✅ Phase 1 | `tests/owner.test.ts` (6) · `e2e/admin.spec.ts` (3) |
 | **Transfer-note collision bug** (do workspaces ka note same ho sakta tha) | ✅ fix + test | 5,000 workspace pe zero collision test |
 | **Idempotent webhooks + amount mismatch guard** (Rs 1 se plan unlock nahi hota) | ✅ tested | e2e replay + mismatch tests |
 
