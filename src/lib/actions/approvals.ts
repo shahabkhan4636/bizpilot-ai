@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { get, run } from "@/lib/db";
-import { requireAuth } from "@/lib/auth";
+import { requireWriteAuth } from "@/lib/authz";
 import { audit } from "@/lib/audit";
 import { sendEmail, isEmailConfigured } from "@/lib/email";
 import { nowIso } from "@/lib/utils";
@@ -15,7 +15,14 @@ export type ApprovalState = { error?: string; notice?: string } | null;
  * The row must already exist in this workspace — a browser cannot invent one.
  */
 export async function approveQueuedMessageAction(_prev: ApprovalState, form: FormData): Promise<ApprovalState> {
-  const { user, membership } = await requireAuth();
+  // A refusal has to be a sentence on the page, not a 500: this action returns state.
+  let guard;
+  try {
+    guard = await requireWriteAuth("approval:act");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "You cannot approve messages right now." };
+  }
+  const { user, membership } = guard;
   const orgId = membership.organization_id;
   const messageId = String(form.get("message_id") ?? "");
   if (form.get("approved") !== "on") {
@@ -73,7 +80,7 @@ export async function approveQueuedMessageAction(_prev: ApprovalState, form: For
 }
 
 export async function rejectQueuedMessageAction(form: FormData): Promise<void> {
-  const { user, membership } = await requireAuth();
+  const { user, membership } = await requireWriteAuth("approval:act");
   const messageId = String(form.get("message_id") ?? "");
   run("update messages set status = 'rejected', approved_by = ? where id = ? and organization_id = ? and status <> 'sent'", [
     user.id, messageId, membership.organization_id,

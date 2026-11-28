@@ -16,7 +16,7 @@ import {
   DeleteMethodButton,
   RefundPaymentForm,
 } from "@/components/billing/local-payment-forms";
-import { listLocalPaymentData } from "@/lib/actions/local-payments";
+import { listLocalPaymentData } from "@/lib/queries";
 import { providerStatuses } from "@/lib/payments/registry";
 import { listPlans } from "@/lib/plans";
 import { formatDate } from "@/lib/utils";

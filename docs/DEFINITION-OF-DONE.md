@@ -28,10 +28,10 @@ A phase is done when every line below is true **and was executed**, not when the
 
 | Phase | Deliverable | Status |
 | --- | --- | --- |
-| 0 | architecture audit, feature inventory, bug/security/db/deploy assessments, roadmap | ✅ `PHASE-REPORT.md` |
-| 1 | audit report | ✅ `PHASE-REPORT.md` |
-| 2 | Postgres migration, versioned migrations, rollback, RLS verified | ✅ `PHASE-2-REPORT.md` |
-| 3 | security + multi-tenant isolation, roles, denial handling | ✅ `PHASE-3-REPORT.md` |
+| 0 | architecture audit, feature inventory, bug/security/db/deploy assessments, roadmap | ✅ `docs/history/PHASE-REPORT.md` |
+| 1 | audit report | ✅ `docs/history/PHASE-REPORT.md` |
+| 2 | Postgres migration, versioned migrations, rollback, RLS verified | ✅ `docs/history/PHASE-2-REPORT.md` |
+| 3 | security + multi-tenant isolation, roles, denial handling | ✅ `docs/history/PHASE-3-REPORT.md` |
 | 4 | auth + onboarding wizard (verification, reset, workspace, invites, progress) | ✅ |
 | 5 | CRM: custom fields, filters, sort, pagination, CSV in/out, duplicates, bulk, timeline, notes, reminders, tags, scoring | ✅ |
 | 6 | AI assistant: server-side, provider-configurable, structured output, cost tracking, approval gate | ✅ code · live **BLOCKED** (no key) |

@@ -89,6 +89,16 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
     >
       <PageHeader title="Billing" description="Plans, usage and invoices. Plan changes go through Stripe Checkout; entitlements only move on a verified webhook." />
 
+      {ctx.readOnly ? (
+        <div className="mb-4">
+          <Alert tone="info" title="Read-only mode">
+            {ctx.impersonation?.mode === "read_only"
+              ? "You are viewing this workspace read-only, so nothing here can be saved. Switch impersonation to write mode from the banner if a real change is needed."
+              : "Your role can view this page but not change it. Ask a workspace admin for edit rights."}
+          </Alert>
+        </div>
+      ) : null}
+
       {sp.checkout === "returned" ? (
         <div className="mb-4">
           <Alert tone="info" title="Returned from Stripe">

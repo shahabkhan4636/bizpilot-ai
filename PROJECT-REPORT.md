@@ -7,11 +7,11 @@ Koi cheez "ho gaya" nahi likha jab tak wo chal kar test na hui ho.
 | --- | --- |
 | Report date | 2026-08-09 |
 | Code commit | latest on `main` (see `git log -1`) |
-| Code size | ~17,500 lines TypeScript/TSX · 38 library modules · 15 server-action modules · 30 components |
-| Routes | **34 pages** + **11 API endpoints** (incl. `POST /api/payments/webhook/<provider>`) |
-| Database | **10 migrations** · **33 tables** · Postgres 17.12 (Supabase: live) + SQLite (local) |
-| Tests | **241 unit/integration** (10 skipped by design) + **29 end-to-end journeys** |
-| E2E engines | SQLite **29/29** ✅ · PostgreSQL **29/29** ✅ |
+| Code size | ~21,000 lines TypeScript/TSX · 44 library modules · 18 server-action modules · 31 components |
+| Routes | **42 pages** + **12 API endpoints** (incl. `POST /api/payments/webhook/<provider>`) |
+| Database | **12 migrations** · **37 tables** · **83 RLS policies** · Postgres 17.12 (Supabase: live) + SQLite (local) |
+| Tests | **362 unit/integration** (10 skipped by design) + **34 end-to-end journeys** |
+| E2E engines | SQLite **34/34** ✅ · PostgreSQL **34/34** ✅ · smoke **9/9** ✅ |
 | CI | `.github/workflows/verify.yml` (gates + Postgres job) · `backup.yml` (daily dump) |
 | Deployment | Vercel project configured — **code abhi deploy nahi hua** |
 | Live preview | `next start` chalta hua: `/`, `/login`, `/pricing`, `/billing/local` sab 200 |
@@ -152,33 +152,46 @@ Har row ka proof ya test ka naam hai — aap khud chala kar dekh sakte hain.
 | --- | --- | --- |
 | Types | `npx tsc --noEmit` | ✅ clean (strict, 0 `any`) |
 | Lint | `npx eslint .` | ✅ 0 errors, 0 warnings |
-| Unit + integration | `npx vitest run` | ✅ **221 passed**, 10 skipped (13 files) |
-| Schema snapshot | `node scripts/build-schema.mjs --check` | ✅ matches 8 migrations + RLS file in sync |
-| Build | `npm run build` | ✅ 34 routes compile |
+| Unit + integration | `npx vitest run` | ✅ **362 passed**, 10 skipped (24 files) |
+| Schema snapshot | `node scripts/build-schema.mjs --check` | ✅ matches 12 migrations + RLS file in sync |
+| Build | `npm run build` | ✅ 42 pages + 12 API routes compile |
 | Everything | `npm run verify` | ✅ "all gates green" |
-| E2E (SQLite) | `npx playwright test` | ✅ **25/25** |
-| E2E (PostgreSQL) | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ **25/25** |
-| Migrations | `npm run db:migrate` | ✅ 8 migrations: dev SQLite, pg `bizpilot`, pg `bizpilot_ci`, Supabase (005 deliberately skipped) |
+| E2E (SQLite) | `npx playwright test` | ✅ **34/34** |
+| E2E (PostgreSQL 17.12) | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ **34/34** |
+| Post-deploy smoke | `node scripts/smoke.mjs <url>` | ✅ **9/9** against a production build (exit 1 on failure) |
+| Migrations | `npm run db:migrate` | ✅ 12 migrations: dev SQLite, pg `bizpilot`, pg `bizpilot_ci`, Supabase (005 deliberately skipped) |
+| Database | — | ✅ 37 tables, 41 indexes, 83 RLS policies |
 
 ### Test inventory (file → kitne tests)
 
 | File | Tests | Kya cover karta hai |
 | --- | --- | --- |
-| `tests/hardening.test.ts` | 33 | CSV injection, BOM import, strict money, PDF escaping, upload path escape, rate limiter, MIGRATION_SKIP, app URL, readiness, **local payments** |
+| `tests/hardening.test.ts` | 33 | CSV injection, BOM import, strict money, PDF escaping, upload path escape, rate limiter, MIGRATION_SKIP, app URL, readiness, local payments |
 | `tests/unit.test.ts` | 33 | core lib: plans, money maths, proposals, csv, validate |
+| `tests/impersonation.test.ts` | 22 | read-only default, typed confirmation, audit, expiry, ownership of the session, never the owner's own account |
 | `tests/integration.test.ts` | 19 | actions: leads, proposals, automations, documents |
 | `tests/webhook.test.ts` | 19 | Stripe webhook signature, lead capture API + hardening |
-| `tests/gateway.test.ts` | 36 | **wallet gateway webhooks**: HMAC verification, idempotency, amount mismatch, shared approval, refunds, transfer-note collisions |
+| `tests/local-payments-regression.test.ts` | 18 | `/billing/local` (a customer's own clients paying them) never regresses |
+| `tests/gateway.test.ts` | 36 | wallet gateway webhooks: HMAC verification, idempotency, amount mismatch, shared approval, refunds, transfer-note collisions |
+| `tests/platform-payments.test.ts` | 32 | platform claims, Founding price lock, owner-typed payout numbers |
+| `tests/admin-workspaces.test.ts` | 16 | admin workspace list/detail, suspend/restore, plan override |
 | `tests/providers.test.ts` | 15 | Stripe/Resend/AI against local HTTP doubles |
 | `tests/rbac-notifications.test.ts` | 15 | permissions matrix, notifications |
+| `tests/platform-owner-unlimited.test.ts` | 14 | the owner's own workspace is unlimited at the enforcement layer |
+| `tests/email.test.ts` | 14 | outbox, retry schedule 5/30/120 min, give-up state |
 | `tests/integrations.test.ts` | 13 | Dropbox OAuth state, token refresh, credentials |
-| `tests/rls.postgres.test.ts` | 12 | RLS policies |
-| `tests/rls.live.test.ts` | 10 | live RLS (needs Postgres) |
+| `tests/rls.postgres.test.ts` | 12 | RLS policies (PGlite) |
+| `tests/rls.live.test.ts` | 10 (skipped) | live RLS as a **non-owner** role — needs live credentials, never faked |
+| `tests/deploy-docs.test.ts` | 9 | every env var the code reads is documented; smoke CLI behaves; no secrets in docs |
 | `tests/scheduler.test.ts` | 9 | due claiming, dry-run, dedupe |
 | `tests/email-verification.test.ts` | 7 | verify + reset tokens |
+| `tests/authorization-gates.test.ts` | 6 | **every mutating server action is gated**; no server action takes a tenant id |
+| `tests/owner.test.ts` | 6 | `ADMIN_EMAIL` is the only source of super-admin truth |
 | `tests/ai-usage.test.ts` | 5 | token accounting, cost honesty |
 | `tests/cron.test.ts` | 5 | cron auth 401/503, dry-run |
-| `e2e/app.spec.ts` | **24 journeys** | signup → leads → proposals → portal → automations → invites → RBAC → tenant isolation → CSP → scheduler → **download** → **proposal race** → **lead conversion** → **SadaPay payment** |
+| `tests/health-probes.test.ts` | 4 | the public probe leaks no tenant metric; health and readiness agree |
+| `e2e/app.spec.ts` | **30 journeys** | signup → leads → proposals → portal → automations → invites → RBAC → tenant isolation → CSP → scheduler → download → proposal race → lead conversion → SadaPay payment → signed webhook |
+| `e2e/admin.spec.ts` | **12 journeys** | admin gate 404, workspaces, users, payments, suspend/restore, impersonation (read-only → write → exit) |
 
 ---
 
@@ -252,7 +265,7 @@ Har row ka proof ya test ka naam hai — aap khud chala kar dekh sakte hain.
 
 ---
 
-# 7. Database — 8 migrations
+# 7. Database — 12 migrations
 
 | # | Migration | Kya karti hai | SQLite | Postgres | Supabase |
 | --- | --- | --- | --- | --- | --- |
@@ -358,7 +371,48 @@ npm run db:migrate && npm run db:seed:pg
 
 ---
 
-# 12. Is round mein kya kya kiya (short log)
+# 12. Is round mein: audit, cleanup, hardening
+
+Poora repository dobara audit hua — findings, severity, fixes aur **jo cheezein jaan-boojh kar
+nahi badli** (wajah ke saath) `docs/AUDIT-2026-08-09.md` mein hain. Chhota khulasa:
+
+1. **Do asli authorisation bugs band hue.**
+   - *Read-only impersonation sirf un actions pe lagti thi jinke saath koi `Permission`
+     likha tha.* Password change, workspace settings, team roles, invitation, billing
+     (checkout/portal/cancel), message approval, AI generation aur account delete —
+     sab hand-written role check + `requireAuth()` se guzar rahe the. Yani support session
+     "read-only" dikha raha tha magar customer ke workspace mein asli tabdeeli kar sakta tha.
+     Ab ek hi gate: `requireWriteAuth(label)` / `assertImpersonationAllowsWrite()` —
+     `src/lib/authz.ts` mein, aur `requirePermission()` bhi wahi call karta hai.
+     Do tests isay lock karte hain; gate hata kar dekha to suite **fail** hoti hai.
+   - *Paanch read helpers `"use server"` modules se export the aur tenant id argument mein
+     lete the* (`listMembers(orgId)`, `listLocalPaymentData(orgId)`, `recentDrafts`,
+     `listAutomationsWithStats`, `proposalVersions`). `"use server"` file ka har export ek
+     callable endpoint hota hai — yani doosre workspace ka id daal kar us ka data parha ja
+     sakta tha. Ab ye `src/lib/queries.ts` mein plain module hain (koi endpoint nahi).
+2. **`/api/health` ab customer data nahi batata.** Pehle public URL pe poore platform ka
+   `leads` count (competitor ke liye business metric) aur raw DB error message deta tha.
+   Ab sirf `ok / engine / migrated / tables / plans / latencyMs`. Detail server log mein.
+3. **Health aur readiness ek hi schema check use karte hain** (`src/lib/health.ts`) — pehle
+   dono ke apne apne implementation the aur drift kar gaye the (half-migrated DB liveness
+   pass kar leti thi).
+4. **Dependencies saaf** — `eslint-config-next` kahin import hi nahi hota tha (flat config
+   plugins khud lagata hai): `npm install` se **155 packages kam**. `@electric-sql/pglite`
+   sirf tests mein use hota hai → production se `devDependencies` mein.
+5. **URL helper ki 4 copies → 1** (`src/lib/request-url.ts`).
+6. **Root ke 5 purane phase documents `docs/history/` mein** (delete nahi, sirf jagah badli +
+   index) — taake root mein sirf mojooda documents hon.
+7. **Docs ke purane numbers theek kiye** (343/352 tests, "migrations 001…005", 26 tables, etc.).
+8. **13 route-level `loading.tsx` skeletons likhe, naape, aur wapas hata diye.**
+   Wajah: `loading.tsx` ka shell pehle flush ho jata hai, us ke baad `notFound()` status
+   nahi badal sakta — `/admin` ne 404 ke bajaye **200** lautaya (Playwright ne pakra).
+   `/admin` ka 404 hona hi design hai (403/redirect admin area ka pata de deta hai), is liye
+   khoobsurat first paint se zyada ahem status code hai. Poora tafseel audit doc ke §4.1 mein.
+9. **Verification** — `npx vitest run` **362 passed / 10 skipped** (24 files),
+   Playwright **34/34 SQLite** aur **34/34 Postgres**, `npm run verify` green,
+   smoke **9/9** asli production build pe.
+
+# 12b. Pichhla round (gateway + refunds + CI)
 
 1. **Migration 009** — `gateway_provider`, `gateway_payment_id`, `paid_at` + `payment_refunds`
    table. Applied: dev SQLite, `data/e2e.db`, local Postgres `bizpilot` + `bizpilot_ci`,

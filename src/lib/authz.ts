@@ -25,6 +25,53 @@ export function forbiddenRedirect(permission?: Permission): never {
   redirect(`/forbidden${q}`);
 }
 
+/**
+ * The impersonation gate for **any** mutation, permission-based or not.
+ *
+ * This lives on its own because not every write is expressed as a `Permission`: a
+ * password change, a subscription cancellation, an invitation and an approval are all
+ * writes, and they used to be guarded by a hand-written role check plus
+ * `requireAuth()`. That made the read-only guarantee only as good as the memory of
+ * whoever wrote the action — and a support session could change a customer's
+ * workspace settings, billing state or profile without leaving write mode.
+ *
+ * So: every mutation goes through this function (directly via `requireWriteAuth()`,
+ * or transitively via `requirePermission()`), and an allowed write is always recorded
+ * as `impersonated_write: true`.
+ */
+export function assertImpersonationAllowsWrite(ctx: AuthContext, label: string): void {
+  const impersonation = ctx.user.impersonation;
+  if (!impersonation) return;
+
+  if (impersonation.mode !== "write") {
+    throw new ForbiddenError(
+      "You are viewing this workspace read-only. Switch impersonation to write mode (with confirmation) to make changes."
+    );
+  }
+
+  // Allowed, but recorded on every call: `impersonated_write: true` + who did it.
+  recordImpersonatedWrite({
+    sessionId: impersonation.sessionId,
+    adminId: impersonation.adminId,
+    organizationId: ctx.membership.organization_id,
+    targetUserId: ctx.user.id,
+    permission: label,
+  });
+}
+
+/**
+ * `requireAuth()` + the read-only-refusal gate above.
+ *
+ * Use this for every mutation that is not expressed as a `Permission` (profile,
+ * password, billing, invitations, approvals, AI generation). `requirePermission()`
+ * already applies it for the ones that are.
+ */
+export async function requireWriteAuth(label: string): Promise<AuthContext> {
+  const ctx = await requireAuth();
+  assertImpersonationAllowsWrite(ctx, label);
+  return ctx;
+}
+
 export async function requirePermission(permission: Permission, message?: string): Promise<AuthContext> {
   const ctx = await requireAuth();
   if (!can(ctx.membership.role, permission)) {
@@ -34,22 +81,7 @@ export async function requirePermission(permission: Permission, message?: string
   // Impersonation gate. Enforced here rather than in the pages, so an action added
   // tomorrow is covered without being remembered — the same reason role checks live
   // in this function and not in the UI.
-  const impersonation = ctx.user.impersonation;
-  if (impersonation && isWritePermission(permission)) {
-    if (impersonation.mode !== "write") {
-      throw new ForbiddenError(
-        "You are viewing this workspace read-only. Switch impersonation to write mode (with confirmation) to make changes."
-      );
-    }
-    // Allowed, but recorded on every call: `impersonated_write: true` + who did it.
-    recordImpersonatedWrite({
-      sessionId: impersonation.sessionId,
-      adminId: impersonation.adminId,
-      organizationId: ctx.membership.organization_id,
-      targetUserId: ctx.user.id,
-      permission,
-    });
-  }
+  if (isWritePermission(permission)) assertImpersonationAllowsWrite(ctx, permission);
 
   return ctx;
 }

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { all, get, run } from "@/lib/db";
+import { get, run } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { nowIso } from "@/lib/utils";
 import { requireAuth } from "@/lib/auth";
@@ -359,21 +359,3 @@ export async function refundLocalPaymentAction(_prev: LocalPaymentState, form: F
 }
 
 /** Numbers shown on the page; kept here so the page does not build its own SQL. */
-export async function listLocalPaymentData(orgId: string) {
-  return {
-    methods: all<{ id: string; kind: string; label: string | null; account_title: string; account_number: string; payment_link: string | null; instructions: string | null; is_active: number }>(
-      "select id, kind, label, account_title, account_number, payment_link, instructions, is_active from local_payment_methods where organization_id = ? order by created_at",
-      [orgId]
-    ),
-    requests: all<{ id: string; plan_code: string; billing_cycle: string; amount_cents: number; currency: string; reference: string | null; payer_note: string | null; status: string; submitted_at: string; reviewed_at: string | null; review_note: string | null; gateway_provider: string | null; gateway_payment_id: string | null; paid_at: string | null }>(
-      `select id, plan_code, billing_cycle, amount_cents, currency, reference, payer_note, status,
-              submitted_at, reviewed_at, review_note, gateway_provider, gateway_payment_id, paid_at
-         from local_payment_requests where organization_id = ? order by submitted_at desc limit 25`,
-      [orgId]
-    ),
-    refunds: all<{ id: string; request_id: string; amount_cents: number; reason: string | null; created_at: string }>(
-      "select id, request_id, amount_cents, reason, created_at from payment_refunds where organization_id = ? order by created_at desc limit 25",
-      [orgId]
-    ),
-  };
-}

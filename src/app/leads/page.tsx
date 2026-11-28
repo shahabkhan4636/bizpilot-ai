@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/card";
 import { EmptyState, Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { LeadFilters } from "@/components/leads/lead-filters";
 import { NewLeadPanel } from "@/components/leads/lead-forms";
-import { listMembers } from "@/lib/actions/leads";
+import { listMembers } from "@/lib/queries";
 import { all, get } from "@/lib/db";
 import { formatMoney, formatDate } from "@/lib/utils";
 import { LEAD_STATUS_LABEL, type LeadStatus } from "@/lib/csv";

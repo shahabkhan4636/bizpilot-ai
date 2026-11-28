@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { loadAppContext } from "@/lib/app-context";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/page-header";
+import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,6 +49,16 @@ export default async function SettingsPage() {
       unreadNotifications={ctx.unreadNotifications}
     >
       <PageHeader title="Settings" description="Your profile, workspace details and team." />
+
+      {ctx.readOnly ? (
+        <div className="mb-4">
+          <Alert tone="info" title="Read-only mode">
+            {ctx.impersonation?.mode === "read_only"
+              ? "You are viewing this workspace read-only, so nothing here can be saved. Switch impersonation to write mode from the banner if a real change is needed."
+              : "Your role can view this page but not change it. Ask a workspace admin for edit rights."}
+          </Alert>
+        </div>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>

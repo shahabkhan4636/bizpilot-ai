@@ -1,9 +1,80 @@
 # Changelog
 
 Every entry states what changed, why, and the test evidence. Phases follow the
-platform-owner build-out plan (`PHASE-0-SETUP.md`).
+platform-owner build-out plan (`docs/history/PHASE-0-SETUP.md`).
 
 ---
+
+## Full audit, cleanup and hardening (2026-08-09)
+
+**What changed**
+
+- **Security — the impersonation read-only gate now covers every mutation.** It used to
+  live only inside `requirePermission()`, so every write that is not expressed as a
+  `Permission` — password change, profile edit, workspace settings, team roles,
+  invitations, billing checkout/portal/cancel, message approvals, AI generation, account
+  deletion — was guarded by a hand-written role check plus `requireAuth()`. A support
+  session in "read-only" mode could therefore make real changes in a customer's
+  workspace. `src/lib/authz.ts` now exposes `assertImpersonationAllowsWrite()` and
+  `requireWriteAuth(label)`; `requirePermission()` calls the same function, and every
+  ungated action was switched over. Allowed writes are still audited as
+  `impersonated_write: true` (now carrying the action label) and the owner is still
+  notified once per session.
+- **Security — read helpers moved out of the server-action surface.** `listMembers`,
+  `recentDrafts`, `proposalVersions`, `listAutomationsWithStats` and
+  `listLocalPaymentData` were exported from `"use server"` modules and took the tenant id
+  as an argument, i.e. they were callable endpoints with no membership check. They are
+  plain functions in `src/lib/queries.ts` now, and the six pages import them from there.
+- **Security — `/api/health` no longer publishes customer metrics.** It returned the
+  total number of leads across all workspaces plus raw database error text, on a public
+  URL. The count is gone; a failure returns `{"error":"database unreachable"}` and logs
+  the detail server-side.
+- **Health and readiness share one schema check** (`src/lib/health.ts`). They had drifted:
+  health only counted rows in `plans`, so a half-migrated database passed liveness while
+  readiness rejected it.
+- **Dependencies.** Removed `eslint-config-next` (never imported — `eslint.config.mjs`
+  composes `@next/eslint-plugin-next` + `eslint-plugin-react-hooks` directly):
+  `npm install` → `removed 155 packages`, lint and build unchanged. Moved
+  `@electric-sql/pglite` from `dependencies` to `devDependencies` (only
+  `tests/rls.postgres.test.ts` imports it).
+- **`src/lib/request-url.ts`** — one implementation of "the base URL of this deployment"
+  for password-reset, verification, invitation and Stripe return links; the three private
+  copies in `actions/account.ts`, `actions/invites.ts` and `actions/billing.ts` are gone.
+- **UI** — `/settings` and `/billing` state up front when the session is read-only (and
+  say which kind: impersonation or role), instead of failing after a submit; the approval
+  action returns a sentence rather than a 500 when it refuses.
+- **Documentation** — the earlier phase reports and the handoff notes moved to
+  `docs/history/` with an index (nothing deleted, every reference updated); stale numbers
+  corrected across `README.md`, `PROJECT_STATUS.md` and this report; new
+  `docs/AUDIT-2026-08-09.md` records every finding, its severity, its fix, and the
+  changes that were measured and deliberately rejected.
+- **Workspace** — removed leftover experiment databases (`data/mig3.db`, `mig4.db`,
+  `migtest.db`, `migtest2.db`) and `tsconfig.tsbuildinfo` from the working tree.
+
+**Rejected after measurement**
+
+- 13 route-level `loading.tsx` skeletons. `loading.tsx` flushes the shell before
+  `notFound()`/`redirect()`, which turns `/admin`'s deliberate `404` into `200` (caught by
+  Playwright). The status code is the authorisation signal, so the skeletons were removed.
+  Doing it properly needs a layout-level guard — a design change, not a cleanup.
+
+**Tests added (+10, none removed, none skipped)**
+
+- `tests/authorization-gates.test.ts` (6): the read-only gate refuses/allows/audits
+  correctly; every exported action in `src/lib/actions/*.ts` is gated (directly or through
+  a guarded local helper) unless explicitly exempted; no server action takes a tenant id.
+  Removing one gate fails the suite with the action's name.
+- `tests/health-probes.test.ts` (4): the public probe publishes no tenant metric and no
+  raw error; health and readiness can no longer disagree about the schema.
+- `e2e/admin.spec.ts`: the read-only notice appears during read-only impersonation and
+  disappears when write mode is enabled.
+
+**Evidence**
+
+`npx tsc --noEmit` clean · `npx eslint .` 0/0 · `npx vitest run` **362 passed / 10 skipped
+(24 files)** · `npx playwright test` **34/34 SQLite** and **34/34 PostgreSQL 17.12** ·
+`npm run verify` green · `node scripts/smoke.mjs <prod build>` **9/9** · migrations 12,
+tables 37, RLS policies 83 — no schema change in this pass.
 
 ## Phase 6 — deploy runbook and post-deploy smoke test (2026-08-09)
 

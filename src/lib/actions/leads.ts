@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { run, get, all } from "@/lib/db";
+import { run, get } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { nowIso } from "@/lib/utils";
 import { requireAuth } from "@/lib/auth";
@@ -337,11 +337,3 @@ export async function importLeadsAction(_prev: LeadState, form: FormData): Promi
 }
 
 /** Members of the org, for assignment dropdowns. */
-export async function listMembers(organizationId: string) {
-  return all<{ user_id: string; email: string; full_name: string | null; role: string }>(
-    `select m.user_id, p.email, p.full_name, m.role
-       from organization_members m join profiles p on p.id = m.user_id
-      where m.organization_id = ? order by p.full_name asc`,
-    [organizationId]
-  );
-}

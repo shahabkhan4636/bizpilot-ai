@@ -2,7 +2,15 @@
 
 _Last updated: 2026-08-09 · branch `main` · this file is the continuity record: read it first._
 
-**Newest work:** Phase 6 — `DEPLOY-ADMIN.md` (owner launch runbook: Supabase **Session
+**Newest work:** full-repository audit, cleanup and hardening — see
+`docs/AUDIT-2026-08-09.md`. Two real authorisation findings were fixed
+(the impersonation read-only gate only covered permission-named actions, so passwords,
+workspace settings, team roles, invitations, billing and approvals could be changed in a
+customer's workspace during a "read-only" support session; and five read helpers were
+exported from `"use server"` modules taking the tenant id as an argument). Also: the
+public `/api/health` no longer publishes the cross-tenant lead count or raw database
+errors; health and readiness now share one schema check; 155 unused packages removed and
+a test-only dependency moved out of production. **Before that:** Phase 6 — `DEPLOY-ADMIN.md` (owner launch runbook: Supabase **Session
 pooler**, env table, migrate→deploy→smoke order, day-1 checklist, cron reality, incident
 table, rollback, security hygiene, and an explicit list of what is still blocked) plus
 `scripts/smoke.mjs` / `npm run smoke` (9 real post-deploy checks; 9/9 against a production
@@ -40,7 +48,7 @@ databases and Supabase production (32 tables).
 A multi-tenant SaaS (Next.js 15 App Router, TypeScript strict, PostgreSQL 17 primary with SQLite as
 a local fallback) that is **feature-complete against the master prompt** for every capability that
 does not require third-party credentials to prove. Everything below is executed and verified, not
-asserted — the verification commands and their real output are in `PHASE-3-REPORT.md`.
+asserted — the verification commands and their real output are in `docs/history/PHASE-3-REPORT.md`.
 
 ## Gate status (current)
 
@@ -48,7 +56,7 @@ asserted — the verification commands and their real output are in `PHASE-3-REP
 | --- | --- | --- |
 | Types | `npx tsc --noEmit` | ✅ clean, strict, 0 `any` |
 | Lint | `npx eslint .` | ✅ 0 errors / 0 warnings |
-| Unit + integration | `npx vitest run` | ✅ 352 passed, 10 skipped (22 files) |
+| Unit + integration | `npx vitest run` | ✅ 362 passed, 10 skipped (24 files) |
 | E2E on PostgreSQL | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ 34 passed |
 | E2E on SQLite | `npx playwright test` | ✅ 34 passed |
 | All gates | `npm run verify` (add `-- --e2e` for the suite) | ✅ green |
@@ -80,7 +88,7 @@ asserted — the verification commands and their real output are in `PHASE-3-REP
 ## Layout map
 
 ```
-src/app/                 36 routes (auth, dashboard, leads, customers, proposals, automations,
+src/app/                 42 pages + 12 API routes (auth, dashboard, leads, customers, proposals, automations,
                          approvals, documents, analytics, team/settings, billing, admin, portal,
                          verify-email, forbidden, api/*)
 src/components/          ui primitives + feature forms (client components)
@@ -89,13 +97,14 @@ src/lib/                 db, auth, authz, permissions, plans, notifications, aut
                          logger, audit, validate, csv, proposal-math, theme
 src/middleware.ts        per-request CSP nonce + x-request-id
 src/lib/actions/         every server action, permission-gated
-sql/migrations/          001…005 with up/down variants per engine (005 = RLS, generated)
+sql/migrations/          001…012, up/down per engine (005 = RLS, generated)
 sql/rls.postgres.sql     canonical 83 policies; migration 005 is generated from it
 tests/                   vitest: unit, rls.live, rls.postgres, rbac-notifications, email-verification
-e2e/app.spec.ts          Playwright journeys A–G
-scripts/                 db-migrate, build-schema, seed, pg-worker, migrate-pg, backup, restore, verify
-vercel.json              cron: /api/cron/automations every 10 minutes
-docs/                    DEPLOYMENT, DATABASE, BACKUP-AND-RESTORE, TROUBLESHOOTING, DEFINITION-OF-DONE
+e2e/app.spec.ts          30 Playwright journeys; e2e/admin.spec.ts another 12
+scripts/                 db-migrate, build-schema, seed, pg-worker, migrate-pg, backup, restore, verify, smoke
+vercel.json              cron: automations + email, daily on Hobby (vercel.pro.json = every 10 min)
+docs/                    DEPLOYMENT, DATABASE, BACKUP-AND-RESTORE, TROUBLESHOOTING, DEFINITION-OF-DONE,
+                         AUDIT-2026-08-09, history/ (earlier phase reports)
 ```
 
 ## Setup

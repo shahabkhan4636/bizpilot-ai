@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { run, get, all, tx } from "@/lib/db";
+import { run, get, tx } from "@/lib/db";
 import { newId, newShareToken } from "@/lib/ids";
 import { addDays, nowIso } from "@/lib/utils";
 import { requireAuth } from "@/lib/auth";
@@ -13,7 +13,6 @@ import { ValidationError, str, optionalStr } from "@/lib/validate";
 import { dispatchTrigger } from "@/lib/automations";
 import { computeTotals } from "@/lib/proposal-math";
 import { notify } from "@/lib/notifications";
-import { safeParse } from "@/lib/plans";
 
 export type ProposalState = { error?: string; notice?: string } | null;
 
@@ -377,11 +376,3 @@ export async function declineProposalAction(_prev: ProposalState, form: FormData
 }
 
 /** Reads version history snapshots recorded on each edit. */
-export async function proposalVersions(organizationId: string, proposalId: string) {
-  return all<{ id: string; summary: string | null; created_at: string; metadata: string }>(
-    `select id, summary, created_at, metadata from activities
-      where organization_id = ? and entity_type = 'proposal' and entity_id = ? and action = 'proposal.version_created'
-      order by created_at desc`,
-    [organizationId, proposalId]
-  ).map((r) => ({ ...r, meta: safeParse<{ version?: number; total_cents?: number }>(r.metadata, {}) }));
-}

@@ -2,12 +2,12 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
 import { createHash } from "node:crypto";
 import { run, get } from "@/lib/db";
 import { newId, newToken } from "@/lib/ids";
 import { addDays, nowIso } from "@/lib/utils";
-import { requireAuth } from "@/lib/auth";
+import { requireWriteAuth } from "@/lib/authz";
+import { requestAppUrl } from "@/lib/request-url";
 import { audit } from "@/lib/audit";
 import { hashPassword, passwordProblems } from "@/lib/password";
 import { createSession, setSessionCookie } from "@/lib/session";
@@ -28,16 +28,9 @@ function sha256(v: string) {
   return createHash("sha256").update(v).digest("hex");
 }
 
-async function baseUrl(): Promise<string> {
-  const h = await headers();
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  const host = h.get("host") ?? "localhost:3000";
-  return process.env.NEXT_PUBLIC_APP_URL ?? `${proto}://${host}`;
-}
-
 export async function inviteMemberAction(_prev: InviteState, form: FormData): Promise<InviteState> {
   try {
-    const { user, membership } = await requireAuth();
+    const { user, membership } = await requireWriteAuth("team:invite");
     const orgId = membership.organization_id;
     if (membership.role !== "owner" && membership.role !== "admin") {
       return { error: "Only an owner or admin can invite people." };
@@ -83,7 +76,7 @@ export async function inviteMemberAction(_prev: InviteState, form: FormData): Pr
     // The settings page lists pending invitations, so it must not keep a stale list.
     revalidatePath("/settings");
 
-    const link = `${await baseUrl()}/invite/${token}`;
+    const link = `${await requestAppUrl()}/invite/${token}`;
     const sent = await deliverEmail({
       to: email,
       kind: "invite",
@@ -108,7 +101,7 @@ export async function inviteMemberAction(_prev: InviteState, form: FormData): Pr
 }
 
 export async function revokeInviteAction(form: FormData): Promise<void> {
-  const { user, membership } = await requireAuth();
+  const { user, membership } = await requireWriteAuth("team:revoke-invite");
   const orgId = membership.organization_id;
   if (membership.role !== "owner" && membership.role !== "admin") return;
   const id = String(form.get("invite_id") ?? "");

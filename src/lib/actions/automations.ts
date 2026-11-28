@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { run, get, all } from "@/lib/db";
+import { run, get } from "@/lib/db";
 import { nowIso } from "@/lib/utils";
 import { requireAuth } from "@/lib/auth";
 import { forbiddenRedirect, requirePermission } from "@/lib/authz";
@@ -270,19 +270,3 @@ export async function retryExecutionAction(_prev: AutomationState, form: FormDat
     return handle(e);
   }
 }
-
-export async function listAutomationsWithStats(organizationId: string) {
-  return all<{
-    id: string; name: string; description: string | null; trigger_type: TriggerType; is_active: number;
-    run_limit_per_day: number; last_run_at: string | null; created_at: string;
-    steps: number; runs: number; failures: number;
-  }>(
-    `select a.id, a.name, a.description, a.trigger_type, a.is_active, a.run_limit_per_day, a.last_run_at, a.created_at,
-            (select count(*) from automation_steps s where s.automation_id = a.id) as steps,
-            (select count(*) from automation_executions e where e.automation_id = a.id) as runs,
-            (select count(*) from automation_executions e where e.automation_id = a.id and e.status = 'failed') as failures
-       from automations a where a.organization_id = ? order by a.created_at desc`,
-    [organizationId]
-  );
-}
-

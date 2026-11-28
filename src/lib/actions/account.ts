@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
 import { all, get, run, tx } from "@/lib/db";
-import { requireAuth, requireUser } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
+import { requestAppUrl } from "@/lib/request-url";
+import { requireWriteAuth } from "@/lib/authz";
 import { audit } from "@/lib/audit";
 import { verifyPassword } from "@/lib/password";
 import { isEmailConfigured } from "@/lib/email";
@@ -16,21 +17,21 @@ import { nowIso } from "@/lib/utils";
 
 export type AccountState = { error?: string; notice?: string; link?: string } | null;
 
-async function appUrl(): Promise<string> {
-  const h = await headers();
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  const host = h.get("host") ?? "localhost:3000";
-  return process.env.NEXT_PUBLIC_APP_URL ?? `${proto}://${host}`;
-}
-
 /** Sends (or hands over) a verification link for the signed-in account. */
 export async function resendVerificationAction(_prev: AccountState, _form: FormData): Promise<AccountState> {
+  // Deliberately `requireUser()`, not `requireWriteAuth()`: verification has to work
+  // before onboarding finishes, so there may be no membership to gate on. The
+  // impersonation case is refused by hand instead — an admin must not be able to mint
+  // a verification token for a customer's mailbox.
   const user = await requireUser();
+  if (user.impersonation) {
+    return { error: "Stop impersonating to verify this account's email address." };
+  }
   const limit = rateLimit(`verify:${user.id}`, 3, 600);
   if (!limit.allowed) return { error: "You already requested a link recently. Try again in a few minutes." };
 
   const { token, expiresAt } = issueVerificationToken(user.id, user.email);
-  const link = `${await appUrl()}/verify-email?token=${token}`;
+  const link = `${await requestAppUrl()}/verify-email?token=${token}`;
 
   if (!isEmailConfigured()) {
     return {
@@ -62,7 +63,7 @@ export async function resendVerificationAction(_prev: AccountState, _form: FormD
  *  • a workspace is deleted only when this user is its last member.
  */
 export async function deleteAccountAction(_prev: AccountState, form: FormData): Promise<AccountState> {
-  const { user, membership } = await requireAuth();
+  const { user, membership } = await requireWriteAuth("account:delete");
   const password = String(form.get("password") ?? "");
   const confirmation = String(form.get("confirm") ?? "").trim().toUpperCase();
   if (confirmation !== "DELETE") return { error: 'Type DELETE in the confirmation box to continue.' };

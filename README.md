@@ -42,7 +42,7 @@ invented customer list and no fabricated social proof anywhere in the marketing 
 
 1. Both engines are wired: leave `DATABASE_URL` empty and the app uses a local SQLite file; set it and the app runs
    on PostgreSQL with the same code path (`src/lib/pg-sync.ts` keeps the synchronous query API on top of a worker-owned
-   `pg` connection). The full suite — 82 tests and 15 browser tests — has been executed green on **PostgreSQL 17.12**,
+   `pg` connection). The full suite — 362 unit/integration tests and 34 browser journeys — has been executed green on **PostgreSQL 17.12**,
    not just on SQLite.
 2. The application connects to Postgres with the **table-owner** role, so its own queries bypass RLS, exactly like
    Supabase's service role. The 83 RLS policies are what protects every other connection (an anon key, psql, an
@@ -92,7 +92,7 @@ To get an admin panel, set `ADMIN_EMAIL` in `.env.local` **before** signing up w
 | `npm run build` / `npm start` | Production build / serve |
 | `npm run typecheck` | `tsc --noEmit` (strict) |
 | `npm run lint` | ESLint 9 flat config (Next + React hooks + TS rules) |
-| `npm test` | Vitest: unit + integration (343 tests + 10 skipped) |
+| `npm test` | Vitest: unit + integration (362 tests + 10 skipped, 24 files) |
 | `npm run test:e2e` | Playwright against a production build on port 3100 (34 journeys, on SQLite and on Postgres) |
 | `npm run smoke <url>` | Post-deploy check: 9 real requests against a live deployment (`--list` to preview) |
 | `npm run db:migrate` | Apply pending migrations; `--status`, `--down N`, `--to ID`, `--baseline` |
@@ -121,7 +121,8 @@ To get an admin panel, set `ADMIN_EMAIL` in `.env.local` **before** signing up w
 | `docs/PAYMENTS-PAKISTAN.md` | SadaPay / JazzCash / EasyPaisa / bank — what works today and what needs a merchant account |
 | `marketing/LAUNCH-KIT.md` | landing copy, pricing, cold outreach scripts, demo script, objections |
 | `marketing/FIRST-10-CUSTOMERS.md` | the 14-day plan to the first ten paying workspaces (+ `lead-tracker.csv`) |
-| `PHASE-REPORT.md`, `PHASE-2-REPORT.md`, `PHASE-3-REPORT.md` | the audit trail of what changed, and what each phase proved |
+| `docs/AUDIT-2026-08-09.md` | the most recent full audit: findings, severities, fixes, and the changes that were measured and then deliberately rejected |
+| `docs/history/` | the audit trail of earlier phases: what changed, what each one proved, and the handoff notes. Kept out of the root so the current documents are the ones in front of you |
 
 ## 5. Environment variables
 
@@ -201,7 +202,7 @@ export DATABASE_URL="postgres://user:pass@host:5432/bizpilot"
 npm run db:migrate:pg      # schema + plan seed + 83 RLS policies
 npm run db:seed:pg -- --demo --email you@company.com --password 'StrongPass123'
 npm run build && npm start
-curl localhost:3000/api/health   # {"ok":true,"engine":"postgres","tables":26,...}
+curl localhost:3000/api/health   # {"ok":true,"engine":"postgres","tables":37,...} — no customer data
 ```
 
 Docker (app + Postgres 17, healthcheck-gated):
@@ -215,18 +216,18 @@ docker compose exec app node scripts/seed.mjs --postgres --demo
 ### Proving it, instead of assuming it
 
 ```bash
-npm run test:postgres       # typecheck → lint → migrate → 82 tests → build → 15 browser tests, all on Postgres
+npm run test:postgres       # typecheck → lint → migrate → the whole vitest suite → build → 34 browser journeys, all on Postgres
 ```
 
 Verified in this repository, on PostgreSQL 17.12:
 
 * `tests/integration.test.ts` (19) — leads, plan limits, automations, usage metering, real writes
-* `tests/webhook.test.ts` (14) — Stripe signature verification and idempotency against the Postgres tables
+* `tests/webhook.test.ts` (19) — Stripe signature verification and idempotency against the Postgres tables
 * `tests/rls.postgres.test.ts` (12) — the Supabase-shaped policies, executed on PGlite
 * `tests/rls.live.test.ts` (10) — the shipped policies, executed on a live server as a **non-owner** role: cross-tenant
   reads return nothing, cross-tenant writes throw `row-level security policy`, super-admin sees all, `plans` is readable
   but not writable
-* `npx playwright test` (15) — the whole UI, including proposal PDF and client acceptance, on Postgres
+* `npx playwright test` (34) — the whole UI, including proposal PDF and client acceptance, on Postgres
 
 ### Roles
 
@@ -259,7 +260,7 @@ says which of the two is active rather than leaving you guessing.
 
 ## 9. QA checklist (run before selling)
 
-Automated today: `npx tsc --noEmit`, `npm run lint`, `npm test` (72 tests), `npx playwright test` (15 browser tests
+Automated today: `npx tsc --noEmit`, `npm run lint`, `npm test` (362 tests), `npx playwright test` (34 browser tests
 against a production build, including the invitation flow, the automation builder running on a real lead, and the
 approval gate).
 

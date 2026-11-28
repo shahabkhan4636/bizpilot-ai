@@ -13,7 +13,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { ProposalEditor } from "@/components/proposals/proposal-editor";
 import { CopyLinkButton, SendProposalButton, StatusButtons } from "@/components/proposals/proposal-actions";
-import { proposalVersions, deleteProposalAction } from "@/lib/actions/proposals";
+import { deleteProposalAction } from "@/lib/actions/proposals";
+import { proposalVersions } from "@/lib/queries";
 import { all, get } from "@/lib/db";
 import { formatMoney, formatDate, relativeTime } from "@/lib/utils";
 

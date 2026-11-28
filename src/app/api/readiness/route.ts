@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { all, engineName, get } from "@/lib/db";
+import { engineName } from "@/lib/db";
+import { checkSchemaHealth, REQUIRED_COLUMNS } from "@/lib/health";
 import { isEmailConfigured } from "@/lib/email";
 import { isStripeConfigured } from "@/lib/stripe";
 import { logger } from "@/lib/logger";
@@ -17,33 +18,15 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const checks: Record<string, { ok: boolean; detail?: string }> = {};
   try {
-    const plans = Number(get<{ c: number }>("select count(*) as c from plans")?.c ?? 0);
-    checks.schema = { ok: plans >= 4, detail: `${plans} plans` };
-
-    // Rows, not "does the table exist": the old SQLite branch counted the table
-    // and cheerfully reported "1 applied" on a database with seven migrations.
-    const migrations = Number(get<{ c: number }>("select count(*) as c from schema_migrations")?.c ?? 0);
-    checks.migrations = { ok: migrations > 0, detail: `${migrations} applied` };
-
-    // Existence counts prove nothing about *which* schema this is. Probe for the
-    // newest columns the code relies on, so a half-migrated database fails the
-    // probe instead of throwing "no such column" at a customer.
-    const required: [string, string][] = [
-      ["automations", "schedule_interval_minutes"],
-      ["integration_credentials", "provider"],
-      ["proposals", "accepted_by_name"],
-    ];
-    const missing: string[] = [];
-    for (const [table, column] of required) {
-      try {
-        all(`select ${column} from ${table} limit 1`);
-      } catch {
-        missing.push(`${table}.${column}`);
-      }
-    }
-    checks.schema_columns = missing.length === 0
-      ? { ok: true, detail: `${required.length} recent columns present` }
-      : { ok: false, detail: `missing ${missing.join(", ")} — run npm run db:migrate` };
+    // One implementation of "is the schema in place", shared with /api/health — the
+    // two probes had already drifted apart once.
+    const health = checkSchemaHealth();
+    checks.schema = { ok: health.plans >= 4, detail: `${health.plans} plans` };
+    checks.migrations = { ok: health.migrations > 0, detail: `${health.migrations} applied` };
+    checks.schema_columns =
+      health.missingColumns.length === 0
+        ? { ok: true, detail: `${REQUIRED_COLUMNS.length} recent columns present` }
+        : { ok: false, detail: `missing ${health.missingColumns.join(", ")} — run npm run db:migrate` };
   } catch (error) {
     logger.error("readiness: database check failed", { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ ready: false, checks, engine: engineName() }, { status: 503 });

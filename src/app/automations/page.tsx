@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { EmptyState, Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { TestAutomationForm, RetryButton, AutomationRowActions } from "@/components/automations/automation-forms";
 import { AutomationBuilder } from "@/components/automations/automation-builder";
-import { listAutomationsWithStats } from "@/lib/actions/automations";
+import { listAutomationsWithStats } from "@/lib/queries";
 import { executionHistory } from "@/lib/automations";
 import { TRIGGER_LABEL } from "@/lib/automation-meta";
 import { all } from "@/lib/db";

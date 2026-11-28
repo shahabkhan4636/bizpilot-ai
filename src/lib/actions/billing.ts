@@ -1,21 +1,14 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
 import { get, run } from "@/lib/db";
-import { requireAuth } from "@/lib/auth";
+import { requireWriteAuth } from "@/lib/authz";
 import { audit } from "@/lib/audit";
+import { requestAppUrl } from "@/lib/request-url";
 import { listPlans } from "@/lib/plans";
 import { createCheckoutSession, createBillingPortalSession, isStripeConfigured, stripePriceId } from "@/lib/stripe";
 
 export type BillingState = { error?: string; notice?: string } | null;
-
-async function origin(): Promise<string> {
-  const h = await headers();
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  const host = h.get("host") ?? "localhost:3000";
-  return process.env.NEXT_PUBLIC_APP_URL ?? `${proto}://${host}`;
-}
 
 /**
  * Starts a Stripe Checkout session. Access is NOT granted here — only a
@@ -25,7 +18,7 @@ async function origin(): Promise<string> {
 export async function startCheckoutAction(_prev: BillingState, form: FormData): Promise<BillingState> {
   let url: string | null = null;
   try {
-    const { user, membership } = await requireAuth();
+    const { user, membership } = await requireWriteAuth("billing:checkout");
     const orgId = membership.organization_id;
     if (membership.role !== "owner" && membership.role !== "admin") {
       return { error: "Only an owner or admin can change the subscription." };
@@ -42,7 +35,7 @@ export async function startCheckoutAction(_prev: BillingState, form: FormData): 
     const priceId = stripePriceId(planCode, cycle);
     if (!priceId) return { error: `No Stripe price ID is configured for the ${plan.name} plan.` };
 
-    const base = await origin();
+    const base = await requestAppUrl();
     const session = await createCheckoutSession({
       priceId,
       organizationId: orgId,
@@ -64,7 +57,7 @@ export async function startCheckoutAction(_prev: BillingState, form: FormData): 
 export async function openPortalAction(_prev: BillingState): Promise<BillingState> {
   let url: string | null = null;
   try {
-    const { membership } = await requireAuth();
+    const { membership } = await requireWriteAuth("billing:portal");
     const orgId = membership.organization_id;
     if (membership.role !== "owner" && membership.role !== "admin") {
       return { error: "Only an owner or admin can open the billing portal." };
@@ -76,7 +69,7 @@ export async function openPortalAction(_prev: BillingState): Promise<BillingStat
     if (!isStripeConfigured()) return { error: "Stripe is not configured on this deployment." };
     if (!sub?.stripe_customer_id) return { error: "No Stripe customer exists yet — start a checkout first." };
 
-    const base = await origin();
+    const base = await requestAppUrl();
     const session = await createBillingPortalSession({ customerId: sub.stripe_customer_id, returnUrl: `${base}/billing` });
     if (!session.ok) return { error: session.message };
     url = session.url;
@@ -89,7 +82,7 @@ export async function openPortalAction(_prev: BillingState): Promise<BillingStat
 /** Owner-only local downgrade to the free starter limits (no Stripe call). */
 export async function cancelSubscriptionAction(_prev: BillingState, form: FormData): Promise<BillingState> {
   try {
-    const { user, membership } = await requireAuth();
+    const { user, membership } = await requireWriteAuth("billing:cancel");
     const orgId = membership.organization_id;
     if (membership.role !== "owner") return { error: "Only the workspace owner can cancel the subscription." };
     if (form.get("confirm") !== "on") return { error: "Tick the confirmation box to cancel." };

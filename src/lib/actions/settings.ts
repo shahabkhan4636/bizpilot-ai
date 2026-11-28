@@ -3,8 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { run, get } from "@/lib/db";
 import { nowIso } from "@/lib/utils";
-import { requireAuth } from "@/lib/auth";
-import { forbiddenRedirect, requirePermission } from "@/lib/authz";
+import { forbiddenRedirect, requirePermission, requireWriteAuth } from "@/lib/authz";
 import { audit } from "@/lib/audit";
 import { hashPassword, verifyPassword, passwordProblems } from "@/lib/password";
 import { ValidationError, str, optionalStr, oneOf } from "@/lib/validate";
@@ -18,7 +17,7 @@ function handle(e: unknown): SettingsState {
 
 export async function updateProfileAction(_prev: SettingsState, form: FormData): Promise<SettingsState> {
   try {
-    const { user } = await requireAuth();
+    const { user } = await requireWriteAuth("profile:update");
     const fullName = str(form.get("full_name"), "Your name", { min: 2, max: 120 });
     run("update profiles set full_name = ?, updated_at = ? where id = ?", [fullName, nowIso(), user.id]);
     audit({ actorId: user.id, action: "profile.update" });
@@ -31,7 +30,7 @@ export async function updateProfileAction(_prev: SettingsState, form: FormData):
 
 export async function changePasswordAction(_prev: SettingsState, form: FormData): Promise<SettingsState> {
   try {
-    const { user } = await requireAuth();
+    const { user } = await requireWriteAuth("profile:password");
     const current = String(form.get("current_password") ?? "");
     const next = String(form.get("new_password") ?? "");
     const confirm = String(form.get("confirm_password") ?? "");
@@ -55,7 +54,7 @@ export async function changePasswordAction(_prev: SettingsState, form: FormData)
 
 export async function updateWorkspaceAction(_prev: SettingsState, form: FormData): Promise<SettingsState> {
   try {
-    const { user, membership } = await requireAuth();
+    const { user, membership } = await requireWriteAuth("settings:workspace");
     if (membership.role !== "owner" && membership.role !== "admin") return { error: "Only an owner or admin can change workspace settings." };
     const name = str(form.get("name"), "Workspace name", { min: 2, max: 120 });
     const timezone = optionalStr(form.get("timezone"), 60) || "UTC";
@@ -78,7 +77,7 @@ export async function updateWorkspaceAction(_prev: SettingsState, form: FormData
 
 export async function updateMemberRoleAction(_prev: SettingsState, form: FormData): Promise<SettingsState> {
   try {
-    const { user, membership } = await requireAuth();
+    const { user, membership } = await requireWriteAuth("team:role");
     const orgId = membership.organization_id;
     if (membership.role !== "owner") return { error: "Only the owner can change roles." };
     // `ROLES` for assignment excludes "owner", so an owner can never be demoted

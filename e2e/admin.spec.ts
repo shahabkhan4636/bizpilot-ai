@@ -310,6 +310,12 @@ test("impersonation starts read-only, refuses writes, needs a typed confirmation
   await expect(ownerPage.getByText(/Read-only access/i).first()).toBeVisible({ timeout: 20_000 });
   await expect(ownerPage.getByRole("button", { name: "New lead" })).toHaveCount(0);
 
+  // Settings, billing, passwords and team roles used to slip past this: the gate only
+  // covered actions that named a permission. The page says so up front now, and the
+  // server refuses even if the form is posted by hand.
+  await ownerPage.goto("/settings");
+  await expect(ownerPage.getByText(/Read-only mode/i).first()).toBeVisible({ timeout: 20_000 });
+
   // ...and a wrong confirmation word must not unlock writes.
   await ownerPage.getByRole("button", { name: /Switch to write mode/i }).click();
   await ownerPage.getByLabel(/Type IMPERSONATE/i).fill("yes");
@@ -321,6 +327,10 @@ test("impersonation starts read-only, refuses writes, needs a typed confirmation
   await ownerPage.getByLabel(/Type IMPERSONATE/i).fill("IMPERSONATE");
   await ownerPage.getByRole("button", { name: /Enable write mode/i }).click();
   await expect(ownerPage.getByText(/Write mode — changes are real/i)).toBeVisible({ timeout: 20_000 });
+
+  // The notice disappears with the mode, so it is describing the session, not the page.
+  await ownerPage.goto("/settings");
+  await expect(ownerPage.getByText(/Read-only mode/i)).toHaveCount(0);
 
   // A real write now goes through, as the customer.
   await ownerPage.goto("/leads?new=1");

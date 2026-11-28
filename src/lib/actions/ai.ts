@@ -1,10 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { run, get, all } from "@/lib/db";
+import { run, get } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { nowIso } from "@/lib/utils";
-import { requireAuth } from "@/lib/auth";
+import { requireWriteAuth } from "@/lib/authz";
 import { audit, logActivity } from "@/lib/audit";
 import { checkAiLimit, checkFeature, recordUsage } from "@/lib/plans";
 import { recordAiUsage } from "@/lib/ai-usage";
@@ -33,7 +33,7 @@ function handle(e: unknown): AiState {
 
 export async function generateContentAction(_prev: AiState, form: FormData): Promise<AiState> {
   try {
-    const { user, membership } = await requireAuth();
+    const { user, membership } = await requireWriteAuth("ai:generate");
     const orgId = membership.organization_id;
 
     const feature = checkFeature(orgId, "ai_assistant");
@@ -126,7 +126,7 @@ export async function generateContentAction(_prev: AiState, form: FormData): Pro
 /** Saves edits to a draft. Approving is a separate, explicit step. */
 export async function saveDraftAction(_prev: AiState, form: FormData): Promise<AiState> {
   try {
-    const { user, membership } = await requireAuth();
+    const { user, membership } = await requireWriteAuth("ai:save-draft");
     const orgId = membership.organization_id;
     const messageId = str(form.get("message_id"), "Draft", { min: 4 });
     const subject = optionalStr(form.get("subject"), 200) || "Untitled draft";
@@ -151,7 +151,7 @@ export async function saveDraftAction(_prev: AiState, form: FormData): Promise<A
  */
 export async function approveAndSendAction(_prev: AiState, form: FormData): Promise<AiState> {
   try {
-    const { user, membership } = await requireAuth();
+    const { user, membership } = await requireWriteAuth("ai:send");
     const orgId = membership.organization_id;
     const messageId = str(form.get("message_id"), "Draft", { min: 4 });
     const to = emailField(form.get("to"), "Recipient email");
@@ -203,10 +203,3 @@ export async function approveAndSendAction(_prev: AiState, form: FormData): Prom
   }
 }
 
-export async function recentDrafts(organizationId: string, limit = 12) {
-  return all<{ id: string; subject: string | null; body: string; status: string; created_at: string; sent_at: string | null }>(
-    `select id, subject, body, status, created_at, sent_at from messages
-      where organization_id = ? order by created_at desc limit ?`,
-    [organizationId, limit]
-  );
-}
