@@ -131,3 +131,62 @@ curl -H "Authorization: Bearer $CRON_SECRET" "https://YOUR_DOMAIN/api/cron/autom
 - `/automations` shows the next scheduled run and the overdue count, and warns on the page when
   `CRON_SECRET` is missing rather than leaving silent non-firing automations.
 - `/api/readiness` reports `providers.scheduler`.
+
+## 9. Verified Vercel + Supabase deployment (2026-08-09)
+
+This is the deployment that is actually running, with the four things that cost real time. Every one of
+them is a platform fact, not an app bug — expect them again on any serverless host.
+
+**Use the pooler host, never the direct host.** Supabase's direct host
+(`db.<project-ref>.supabase.co`) publishes an **AAAA record only**, and Vercel Functions have no IPv6
+egress, so the driver reports `getaddrinfo ENOTFOUND` and the sync bridge waits out its deadline.
+`DATABASE_URL` must point at the pooler:
+
+```
+postgresql://bizpilot_app.<project-ref>:<password>@aws-2-<region>.pooler.supabase.com:5432/postgres?sslmode=require
+```
+
+The shard number is project-specific: for this project `aws-0` and `aws-1` answer
+`tenant/user not found`, and `aws-2` works. Copy the exact host from
+Supabase → **Connect → Session pooler** instead of guessing it.
+
+**Pooler TLS does not chain to a public root.** `pg-connection-string` turns `sslmode=require` into
+`ssl: {}`, and Node then verifies the chain — "self-signed certificate in certificate chain". libpq's
+`require` means *encrypt, do not verify*, so `scripts/pg-worker.mjs` applies that explicitly and still
+honours `sslmode=verify-ca` / `verify-full` as written.
+
+**Ship the worker and `pg`.** The Postgres engine opens its connection in a worker thread
+(`scripts/pg-worker.mjs`), and that worker requires `pg` at runtime — invisible to file tracing. A static
+side-effect import of `pg` in `src/lib/pg-sync.ts` (with `pg` kept in `serverExternalPackages`) makes the
+tracer walk the whole graph; without it the worker dies on `Cannot find module 'xtend/mutable'` and every
+request hangs until the bridge times out. `next.config.ts` also pins the worker file with
+`outputFileTracingIncludes`.
+
+**The bridge must reconnect.** Vercel freezes the process between requests and the pooler drops the idle
+socket. `scripts/pg-worker.mjs` now bounds queries (20s), keeps the socket alive, reconnects on a dead
+connection and retries once outside a transaction, and treats `init` as idempotent.
+
+**Least-privilege database role.** The app connects as `bizpilot_app` (created with `login`,
+`bypassrls`, and `select/insert/update/delete` on `public` plus sequence grants) rather than the
+`postgres` superuser. Recreate it with:
+
+```sql
+create role bizpilot_app login password '<password>' bypassrls;
+grant connect on database postgres to bizpilot_app;
+grant usage on schema public to bizpilot_app;
+grant select, insert, update, delete on all tables in schema public to bizpilot_app;
+grant usage, select on all sequences in schema public to bizpilot_app;
+grant execute on all functions in schema public to bizpilot_app;
+alter default privileges in schema public grant select, insert, update, delete on tables to bizpilot_app;
+alter default privileges in schema public grant usage, select on sequences to bizpilot_app;
+```
+
+Other notes from the same deploy:
+
+- `engines.node` is pinned to `22.x`: `better-sqlite3` 11.x has no prebuilt binary for Node 26.
+- The project's Vercel Authentication (deployment protection) must be off for the app to be reachable at
+  all; the app's own session auth is the gate. Re-enable it in Vercel → Settings → Deployment Protection
+  if you want Vercel SSO in front of it too.
+- `.vercelignore` keeps `data/*.db` and build output out of the upload.
+- Migrations are applied by script, not at runtime: `DATABASE_URL=... MIGRATION_SKIP=005 node scripts/db-migrate.mjs`.
+  `005_row_level_security` is skipped on Supabase because it replaces `auth.uid()`.

@@ -1,3 +1,23 @@
+## 2026-08-09 — Production deployment (Vercel + Supabase)
+
+Deployed the app to Vercel against Supabase Postgres and fixed the four issues that only appear there:
+
+- **Postgres bridge shipped incomplete.** The worker thread and `pg` were never traced into the function
+  bundle (`Cannot find module 'xtend/mutable'`), so every request hung to the 120s bridge deadline while
+  static pages answered normally. A static `pg` import in `src/lib/pg-sync.ts` plus
+  `outputFileTracingIncludes` / `serverExternalPackages` now ship the full graph.
+- **Dead connection after a serverless freeze.** The bridge held one client forever; it now bounds
+  queries at 20s, keeps the socket alive, reconnects and retries once outside a transaction, and treats
+  `init` as idempotent.
+- **Pooler TLS.** `sslmode=require` made Node verify a chain the pooler cannot pass; the worker now
+  applies libpq semantics (encrypt, do not verify) while still honouring `verify-ca` / `verify-full`.
+- **Fail-fast connect.** `connectionTimeoutMillis` plus a hint naming the pooler host instead of a 120s
+  hang when `DATABASE_URL` points at an IPv6-only direct host (Vercel has no IPv6 egress).
+
+Also: `engines.node` pinned to 22.x (better-sqlite3), `.vercelignore`, `scripts/deploy-vercel.sh`, and a
+"Verified Vercel + Supabase deployment" section in `docs/DEPLOYMENT.md` including the least-privilege
+`bizpilot_app` role.
+
 # Changelog
 
 Every entry states what changed, why, and the test evidence. Phases follow the
