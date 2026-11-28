@@ -54,6 +54,7 @@ export default async function AdminEmailPage({
       role={ctx.membership.role}
       canWriteLeads={ctx.can("lead:write")}
       planName={ctx.plan.name}
+      impersonation={ctx.impersonation}
       trialDaysLeft={ctx.trialDaysLeft}
       unreadNotifications={ctx.unreadNotifications}
     >

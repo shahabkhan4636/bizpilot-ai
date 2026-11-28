@@ -2,7 +2,14 @@
 
 _Last updated: 2026-08-09 · branch `main` · this file is the continuity record: read it first._
 
-**Newest work:** Phase 4 — the platform owner's own workspace is **unlimited at the
+**Newest work:** Phase 5 — the admin surface is real: `/admin/workspaces`,
+`/admin/workspaces/[id]`, `/admin/users` and `/admin/payments` (migration 012 adds
+`organizations.suspension_reason`/`suspended_by` and `impersonation_sessions`).
+Suspend/restore needs a mandatory reason, is audited, notifies and emails the owner, and
+lands the customer on `/suspended` (a page that names the reason) instead of a 500.
+Impersonation is **read-only by default**, needs the typed word `IMPERSONATE` for write
+mode, audits every write as `impersonated_write: true`, notifies the owner, expires in
+60 minutes and can never target the platform owner's own account. **Earlier:** Phase 4 — the platform owner's own workspace is **unlimited at the
 enforcement layer** (`src/lib/limits.ts` + `isPlatformOwnerWorkspace` in `plans.ts`:
 every limit `Infinity`, every feature on, `subscriptionIsUsable` true), with a
 **Platform owner** badge in the sidebar and in the `/admin` workspace list. The rule
@@ -36,13 +43,13 @@ asserted — the verification commands and their real output are in `PHASE-3-REP
 | --- | --- | --- |
 | Types | `npx tsc --noEmit` | ✅ clean, strict, 0 `any` |
 | Lint | `npx eslint .` | ✅ 0 errors / 0 warnings |
-| Unit + integration | `npx vitest run` | ✅ 305 passed, 10 skipped (19 files) |
-| E2E on PostgreSQL | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ 31 passed |
-| E2E on SQLite | `npx playwright test` | ✅ 31 passed |
+| Unit + integration | `npx vitest run` | ✅ 343 passed, 10 skipped (21 files) |
+| E2E on PostgreSQL | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ 34 passed |
+| E2E on SQLite | `npx playwright test` | ✅ 34 passed |
 | All gates | `npm run verify` (add `-- --e2e` for the suite) | ✅ green |
 | Production build | `npm run build` | ✅ 36 routes |
 | Readiness probe | `GET /api/readiness` | ✅ 200 with provider warnings |
-| Fresh-database path | `db:migrate` → `seed` → e2e on an empty Postgres | ✅ 36 tables, 83 policies, 11 migrations, 31 e2e journeys |
+| Fresh-database path | `db:migrate` → `seed` → e2e on an empty Postgres | ✅ 37 tables, 83 policies, 12 migrations, 34 e2e journeys |
 | Provider behaviour | `npx vitest run tests/providers.test.ts` | ✅ 15 cases against a real HTTP double |
 
 ## Decisions worth not re-litigating

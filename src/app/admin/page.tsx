@@ -78,6 +78,7 @@ export default async function AdminPage() {
       role={ctx.membership.role}
       canWriteLeads={ctx.can("lead:write")}
       planName={ctx.plan.name}
+      impersonation={ctx.impersonation}
       trialDaysLeft={ctx.trialDaysLeft}
       unreadNotifications={ctx.unreadNotifications}
     >
@@ -86,7 +87,10 @@ export default async function AdminPage() {
         description="Platform-wide view. Access is verified on the server for every request, not just hidden in the UI."
         actions={
           <div className="flex gap-2">
-            <Link href="/admin/platform-payments"><Button size="sm" variant="outline">Platform payments</Button></Link>
+            <Link href="/admin/workspaces"><Button size="sm" variant="outline">Workspaces</Button></Link>
+            <Link href="/admin/users"><Button size="sm" variant="outline">Users</Button></Link>
+            <Link href="/admin/payments"><Button size="sm" variant="outline">Payments</Button></Link>
+            <Link href="/admin/platform-payments"><Button size="sm" variant="outline">Payout settings</Button></Link>
             <Link href="/admin/email"><Button size="sm" variant="outline">Email outbox</Button></Link>
             <Link href="/help"><Button size="sm" variant="outline">Operations guide</Button></Link>
           </div>

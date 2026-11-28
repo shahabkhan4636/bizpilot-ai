@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireAuth, type AuthContext } from "./auth";
-import { can, type Permission } from "./permissions";
+import { can, isWritePermission, type Permission } from "./permissions";
+import { recordImpersonatedWrite } from "./impersonation";
 
 export class ForbiddenError extends Error {
   readonly code = "forbidden";
@@ -29,6 +30,27 @@ export async function requirePermission(permission: Permission, message?: string
   if (!can(ctx.membership.role, permission)) {
     throw new ForbiddenError(message ?? `Your role (${ctx.membership.role}) cannot ${permission.replace(":", " ")}.`);
   }
+
+  // Impersonation gate. Enforced here rather than in the pages, so an action added
+  // tomorrow is covered without being remembered — the same reason role checks live
+  // in this function and not in the UI.
+  const impersonation = ctx.user.impersonation;
+  if (impersonation && isWritePermission(permission)) {
+    if (impersonation.mode !== "write") {
+      throw new ForbiddenError(
+        "You are viewing this workspace read-only. Switch impersonation to write mode (with confirmation) to make changes."
+      );
+    }
+    // Allowed, but recorded on every call: `impersonated_write: true` + who did it.
+    recordImpersonatedWrite({
+      sessionId: impersonation.sessionId,
+      adminId: impersonation.adminId,
+      organizationId: ctx.membership.organization_id,
+      targetUserId: ctx.user.id,
+      permission,
+    });
+  }
+
   return ctx;
 }
 

@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
 import { Button } from "./ui/button";
 import { logoutAction } from "@/lib/actions/auth";
+import { ImpersonationBanner } from "./impersonation-banner";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -40,6 +41,7 @@ export function AppShell({
   planName,
   trialDaysLeft,
   unreadNotifications = 0,
+  impersonation = null,
 }: {
   children: React.ReactNode;
   user: { name: string; email: string; isSuperAdmin: boolean };
@@ -49,6 +51,8 @@ export function AppShell({
   planName: string;
   trialDaysLeft: number | null;
   unreadNotifications?: number;
+  /** Set while the platform owner is viewing a customer's workspace. */
+  impersonation?: { adminEmail: string; mode: "read_only" | "write"; expiresAt: string } | null;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -158,6 +162,16 @@ export function AppShell({
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
+        {impersonation ? (
+          <div className="sticky top-0 z-40">
+            <ImpersonationBanner
+              adminEmail={impersonation.adminEmail}
+              mode={impersonation.mode}
+              expiresAt={impersonation.expiresAt}
+              returnTo="/admin/workspaces"
+            />
+          </div>
+        ) : null}
         <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-[hsl(var(--border))] bg-[hsl(var(--bg))]/90 px-4 backdrop-blur">
           <button className="lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu">
             <Menu className="h-5 w-5" />

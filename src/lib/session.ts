@@ -2,7 +2,12 @@ import { cookies } from "next/headers";
 import { newToken } from "./ids";
 import { addDays, nowIso } from "./utils";
 import { run, get } from "./db";
-import { superAdminFlag } from "./owner";
+import { isSuperAdmin, superAdminFlag } from "./owner";
+import {
+  activeImpersonation,
+  readImpersonationId,
+  type ImpersonationInfo,
+} from "./impersonation";
 
 const COOKIE_NAME = "bizpilot_session";
 const SESSION_DAYS = 30;
@@ -13,6 +18,11 @@ export type SessionUser = {
   full_name: string | null;
   is_super_admin: number;
   onboarded_at: string | null;
+  /**
+   * Present only while the platform owner is viewing a customer's workspace.
+   * `id`/`email` above then belong to the *customer*; the admin is described here.
+   */
+  impersonation?: ImpersonationInfo;
 };
 
 export function createSession(userId: string): { token: string; expiresAt: string } {
@@ -74,3 +84,45 @@ export function getUserBySessionToken(token: string | null): SessionUser | null 
   };
 }
 
+
+/**
+ * The request's acting user, with impersonation applied.
+ *
+ * The session cookie always identifies the *admin*. If a live impersonation row is
+ * pointed at by the second cookie, the returned user is the customer — carrying an
+ * `impersonation` block so every gate downstream knows a human is wearing someone
+ * else's hat, and in which mode. Doing this in one place means no page or action can
+ * forget about it.
+ */
+export async function currentUser(): Promise<SessionUser | null> {
+  const token = await readSessionToken();
+  const admin = getUserBySessionToken(token);
+  if (!admin) return null;
+  if (!isSuperAdmin(admin)) return admin; // only the platform owner may impersonate
+
+  const sessionId = await readImpersonationId();
+  const row = activeImpersonation({ sessionId, adminId: admin.id });
+  if (!row) return admin;
+
+  const target = get<{ id: string; email: string; full_name: string | null; onboarded_at: string | null }>(
+    "select id, email, full_name, onboarded_at from profiles where id = ?",
+    [row.target_user_id]
+  );
+  if (!target) return admin;
+
+  return {
+    id: target.id,
+    email: target.email,
+    full_name: target.full_name,
+    is_super_admin: superAdminFlag(target.email),
+    onboarded_at: target.onboarded_at,
+    impersonation: {
+      sessionId: row.id,
+      adminId: admin.id,
+      adminEmail: admin.email,
+      mode: row.mode,
+      startedAt: row.started_at,
+      expiresAt: row.expires_at,
+    },
+  };
+}

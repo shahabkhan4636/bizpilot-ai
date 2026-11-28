@@ -5,6 +5,70 @@ platform-owner build-out plan (`PHASE-0-SETUP.md`).
 
 ---
 
+## Phase 5 — admin workspaces, users, payments, suspension and impersonation (2026-08-09)
+
+**What changed**
+
+- Migration `012_admin_impersonation` (applied to `data/bizpilot.db`, `data/e2e.db`, both
+  local Postgres databases and Supabase production — 12 migrations, 37 tables):
+  `organizations.suspension_reason` + `suspended_by`, and `impersonation_sessions`.
+- **New admin pages:** `/admin/workspaces` (server-side search, plan/status filters,
+  pagination, owner + Founding badges), `/admin/workspaces/[id]` (members, plan,
+  Founding Member controls, danger zone, recent audit trail), `/admin/users`
+  (verification state, last sign-in, workspaces per account) and `/admin/payments`
+  (three tabs: platform claims, workspace payments, refunds).
+- **Suspend/restore with a mandatory reason** (`src/lib/admin/workspaces.ts`): the
+  reason is stored on the row, audited, the owner is notified in-app **and** emailed
+  through the outbox. `requireAuth` now `redirect("/suspended")` instead of throwing,
+  so a suspended customer sees a page explaining what happened and why instead of a 500.
+  The platform owner's own workspace is refused — locking yourself out of your own
+  product through the support tool is an outage, not a mistake.
+- **Impersonation** (`src/lib/impersonation.ts`): the admin's session is *never*
+  replaced (a second cookie points at a row), **read-only by default**, write mode needs
+  the typed word `IMPERSONATE`, every write is audited as `impersonated_write: true`
+  and notifies the workspace owner once per session, sessions expire after 60 minutes,
+  only the admin who started one can use it, and the platform owner's own account can
+  never be impersonated.
+- Enforcement lives in the authorisation layer: `requirePermission` refuses every
+  non-read permission under read-only impersonation (so a future action is covered
+  without being remembered) and records the write under write mode.
+  `READ_ONLY_PERMISSIONS` + `isWritePermission` are exported from `permissions.ts` for
+  exactly this, and the UI hides write affordances from the same rule.
+- One path per decision: the quick "Suspend" button in the `/admin` table and the old
+  `suspendOrganizationAction` were replaced by a link to the workspace record (a reason
+  is now unavoidable), and plan assignment delegates to `applyWorkspacePlan`.
+
+**Why**
+
+This is the part that makes the platform runnable by one person: see who is on which
+plan, get a customer unstuck, and look at their screen when a bug report says "it's
+broken" — without ever becoming able to change their data silently.
+
+**Bugs found and fixed in this phase**
+
+1. **A "use server" file exported a string** (`IMPERSONATION_CONFIRMATION_WORD`), which
+   crashed `/admin/platform-payments` at runtime — caught by the Phase 3 e2e test still
+   passing in the suite. Constants moved to `impersonation-shared.ts`.
+2. **The banner pulled `better-sqlite3` into the browser bundle** (client component
+   importing the DB-backed module) — the build failed; fixed by the same shared module.
+3. **Two `currentUser()` functions existed** — the one in `auth.ts` read the raw session
+   and ignored impersonation, so "view as customer" silently showed the owner their own
+   dashboard. Found by the new e2e test; `auth.currentUser` now delegates to the
+   impersonation-aware resolver.
+4. **Confirmation messages vanished after a successful suspend** (`revalidatePath` drops
+   form state) — same class of bug as Phase 3; fixed with `?done=suspended|restored|plan`.
+
+**Test evidence**
+
+- `npx vitest run` → **343 passed / 10 skipped (353 tests, 21 files)** (was 305/10;
+  +22 `tests/impersonation.test.ts`, +16 `tests/admin-workspaces.test.ts`).
+- `npx playwright test` → **34 passed** on SQLite **and** **34 passed** on Postgres
+  (3 new admin journeys: admin-only pages, suspend → customer blocked → restore,
+  impersonation read-only → typed confirmation → real write → audited → exit).
+- `npm run verify` → typecheck, lint, unit tests, schema snapshot, build: **all gates green**.
+
+---
+
 ## Phase 4 — the platform owner's workspace is unlimited (2026-08-09)
 
 **What changed**

@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
+
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Input, Label, Select } from "@/components/ui/input";
-import { updatePlanAction, suspendOrganizationAction, setOrganizationPlanAction, type AdminState } from "@/lib/actions/admin";
+import { updatePlanAction, setOrganizationPlanAction, type AdminState } from "@/lib/actions/admin";
 
 function Feedback({ state }: { state: AdminState }) {
   if (!state) return null;
@@ -44,7 +46,6 @@ export function PlanEditor({ plan }: { plan: {
 }
 
 export function OrgActions({ orgId, suspended, planCode, plans }: { orgId: string; suspended: boolean; planCode: string; plans: { code: string; name: string }[] }) {
-  const [suspendState, suspendAction, suspending] = useActionState(suspendOrganizationAction, null as AdminState);
   const [planState, planAction, planPending] = useActionState(setOrganizationPlanAction, null as AdminState);
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -55,15 +56,15 @@ export function OrgActions({ orgId, suspended, planCode, plans }: { orgId: strin
         </Select>
         <Button type="submit" size="sm" variant="ghost" disabled={planPending}>Assign</Button>
       </form>
-      <form action={suspendAction}>
-        <input type="hidden" name="organization_id" value={orgId} />
-        <Button type="submit" size="sm" variant={suspended ? "outline" : "danger"} disabled={suspending}>
-          {suspended ? "Restore" : "Suspend"}
+      {/* Suspension lives on the workspace record, where a reason is required and
+          audited. A one-click suspend in a table row is how a customer loses access
+          by accident. */}
+      <Link href={`/admin/workspaces/${orgId}`}>
+        <Button size="sm" variant={suspended ? "outline" : "ghost"}>
+          {suspended ? "Restore…" : "Suspend…"}
         </Button>
-      </form>
-      {suspendState?.notice ? <span className="text-xs text-emerald-600">{suspendState.notice}</span> : null}
+      </Link>
       {planState?.notice ? <span className="text-xs text-emerald-600">{planState.notice}</span> : null}
-      {suspendState?.error ? <span className="text-xs text-red-600">{suspendState.error}</span> : null}
       {planState?.error ? <span className="text-xs text-red-600">{planState.error}</span> : null}
     </div>
   );

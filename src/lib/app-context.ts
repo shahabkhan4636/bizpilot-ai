@@ -1,5 +1,12 @@
 import { requireAuth } from "./auth";
-import { can, canManageTeam, canManageWorkspace, isReadOnly, type Permission } from "./permissions";
+import {
+  can,
+  canManageTeam,
+  canManageWorkspace,
+  isReadOnly,
+  isWritePermission,
+  type Permission,
+} from "./permissions";
 import { getEffectivePlan, subscriptionIsUsable, leadCount, usageThisMonth } from "./plans";
 import { get } from "./db";
 import { unreadCount } from "./notifications";
@@ -19,8 +26,14 @@ export async function loadAppContext() {
       ? Math.max(0, Math.ceil((new Date(sub.trial_ends_at).getTime() - Date.now()) / 86_400_000))
       : null;
 
+  // Read-only impersonation hides write affordances as well as refusing them; the
+  // refusal itself lives in `requirePermission`.
+  const impersonation = user.impersonation ?? null;
+  const readOnlyImpersonation = impersonation?.mode === "read_only";
+
   return {
     user,
+    impersonation,
     membership,
     orgId: membership.organization_id,
     plan,
@@ -35,9 +48,10 @@ export async function loadAppContext() {
     /** Team administration (invite / remove / re-role). Owner and admin only. */
     canManage: canManageTeam(membership.role),
     canManageWorkspace: canManageWorkspace(membership.role),
-    readOnly: isReadOnly(membership.role),
+    readOnly: isReadOnly(membership.role) || readOnlyImpersonation,
     unreadNotifications: unreadCount(membership.organization_id, user.id),
     /** Capability check usable directly in a server component. */
-    can: (permission: Permission) => can(membership.role, permission),
+    can: (permission: Permission) =>
+      can(membership.role, permission) && !(readOnlyImpersonation && isWritePermission(permission)),
   };
 }

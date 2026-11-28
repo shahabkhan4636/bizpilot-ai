@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { run, get } from "@/lib/db";
 import { nowIso } from "@/lib/utils";
 import { requireSuperAdmin } from "@/lib/auth";
+import { applyWorkspacePlan } from "@/lib/admin/workspaces";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { dispatchQueuedEmails, deliverEmail } from "@/lib/email-outbox";
@@ -55,46 +56,36 @@ export async function updatePlanAction(_prev: AdminState, form: FormData): Promi
   return { notice: "Plan updated. New limits apply immediately." };
 }
 
-export async function suspendOrganizationAction(_prev: AdminState, form: FormData): Promise<AdminState> {
+/**
+ * Suspending now lives on the workspace detail page, where a reason is required.
+ *
+ * This action is kept only as a guard so an old form post (or a bookmarked request)
+ * cannot suspend a customer without recording why: it refuses and points at the page
+ * that does it properly.
+ */
+export async function suspendOrganizationAction(_prev: AdminState, _form: FormData): Promise<AdminState> {
   try {
-    const admin = await requireSuperAdmin();
-    const orgId = str(form.get("organization_id"), "Organisation", { min: 4 });
-    const org = get<{ id: string; suspended_at: string | null; name: string }>(
-      "select id, suspended_at, name from organizations where id = ?",
-      [orgId]
-    );
-    if (!org) return { error: "Organisation not found." };
-    const suspend = !org.suspended_at;
-    run("update organizations set suspended_at = ?, updated_at = ? where id = ?", [suspend ? nowIso() : null, nowIso(), orgId]);
-    audit({ organizationId: orgId, actorId: admin.id, action: suspend ? "admin.org_suspended" : "admin.org_restored" });
+    await requireSuperAdmin();
   } catch (e) {
     return handle(e);
   }
-  revalidatePath("/admin");
-  return { notice: "Organisation status updated." };
+  return { error: "Suspending requires a reason. Open the workspace from /admin/workspaces and do it there." };
 }
 
+/** Plan assignment from the /admin table — delegates so there is one implementation. */
 export async function setOrganizationPlanAction(_prev: AdminState, form: FormData): Promise<AdminState> {
   try {
     const admin = await requireSuperAdmin();
     const orgId = str(form.get("organization_id"), "Organisation", { min: 4 });
     const planCode = str(form.get("plan_code"), "Plan", { min: 2, max: 40 });
-    if (!get("select code from plans where code = ?", [planCode])) return { error: "Unknown plan code." };
-    const existing = get("select id from subscriptions where organization_id = ?", [orgId]);
-    if (existing) {
-      run("update subscriptions set plan_code = ?, updated_at = ? where organization_id = ?", [planCode, nowIso(), orgId]);
-    } else {
-      run(
-        "insert into subscriptions (id, organization_id, plan_code, status, billing_cycle, created_at, updated_at) values (?,?,?,?,?,?,?)",
-        [crypto.randomUUID(), orgId, planCode, "active", "monthly", nowIso(), nowIso()]
-      );
-    }
-    audit({ organizationId: orgId, actorId: admin.id, action: "admin.plan_assigned", metadata: { planCode } });
+    const result = applyWorkspacePlan({ organizationId: orgId, planCode, actorId: admin.id });
+    if (!result.ok) return { error: result.message };
   } catch (e) {
     return handle(e);
   }
   revalidatePath("/admin");
-  return { notice: "Plan assigned manually (no Stripe charge — use for support and QA)." };
+  revalidatePath("/admin/workspaces");
+  return { notice: "Plan assigned manually (no charge — use for support and QA)." };
 }
 
 /* ------------------------------------------------------------ email outbox */

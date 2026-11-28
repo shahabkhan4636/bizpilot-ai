@@ -59,7 +59,14 @@ export const PERMISSIONS = [
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
-const READ_ONLY: Permission[] = [
+/**
+ * The permissions that read or describe, never mutate.
+ *
+ * Exported because impersonation needs exactly this list: "read-only impersonation"
+ * means every permission *not* in here is refused, so a new write permission added
+ * later is refused by default rather than silently allowed.
+ */
+export const READ_ONLY_PERMISSIONS: Permission[] = [
   "lead:read",
   "customer:read",
   "proposal:read",
@@ -70,11 +77,16 @@ const READ_ONLY: Permission[] = [
   "settings:profile",
 ];
 
+/** True when the permission can change data (i.e. is not in the read-only set). */
+export function isWritePermission(permission: Permission): boolean {
+  return !READ_ONLY_PERMISSIONS.includes(permission);
+}
+
 const GRANTS: Record<Role, Permission[]> = {
   owner: [...PERMISSIONS],
   admin: PERMISSIONS.filter((p) => p !== "workspace:delete"),
   manager: [
-    ...READ_ONLY,
+    ...READ_ONLY_PERMISSIONS,
     "lead:write",
     "lead:delete",
     "customer:write",
@@ -89,7 +101,7 @@ const GRANTS: Record<Role, Permission[]> = {
     "export:data",
   ],
   member: [
-    ...READ_ONLY,
+    ...READ_ONLY_PERMISSIONS,
     "lead:write",
     "customer:write",
     "proposal:write",
@@ -97,7 +109,7 @@ const GRANTS: Record<Role, Permission[]> = {
     "ai:generate",
     "export:data",
   ],
-  viewer: [...READ_ONLY],
+  viewer: [...READ_ONLY_PERMISSIONS],
 };
 
 export function can(role: string, permission: Permission): boolean {

@@ -1,7 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import { get } from "./db";
-import { getUserBySessionToken, readSessionToken, type SessionUser } from "./session";
+import { currentUser as resolveCurrentUser, getUserBySessionToken, readSessionToken, type SessionUser } from "./session";
 import { isSuperAdmin } from "./owner";
+import { activeImpersonation, readImpersonationId } from "./impersonation";
 
 export type Membership = {
   organization_id: string;
@@ -18,9 +19,15 @@ export type AuthContext = {
   membership: Membership;
 };
 
+/**
+ * The acting user for this request — impersonation-aware.
+ *
+ * Delegates to `session.currentUser()` so there is exactly one place that decides
+ * whether the platform owner is currently wearing a customer's hat; an earlier
+ * duplicate here read the raw session and silently ignored impersonation.
+ */
 export async function currentUser(): Promise<SessionUser | null> {
-  const token = await readSessionToken();
-  return getUserBySessionToken(token);
+  return resolveCurrentUser();
 }
 
 export async function requireUser(): Promise<SessionUser> {
@@ -53,7 +60,9 @@ export async function requireAuth(): Promise<AuthContext> {
   const membership = membershipForUser(user.id);
   if (!membership) redirect("/onboarding");
   if (membership.suspended_at) {
-    throw new Error("This workspace has been suspended. Please contact support.");
+    // A redirect to an explanatory page, not a 500: a suspended customer should be
+    // told what happened and who to contact, and the reason is stored on the row.
+    redirect("/suspended");
   }
   return { user, membership };
 }
@@ -73,7 +82,28 @@ export async function requireAuth(): Promise<AuthContext> {
 export async function requireSuperAdmin(): Promise<SessionUser> {
   const user = await requireUser();
   if (!isSuperAdmin(user)) notFound();
+  // While impersonating, `user` is the customer, who is never a super-admin — so the
+  // admin panel is unreachable mid-impersonation and an admin cannot accidentally
+  // perform admin actions "as" a customer.
   return user;
+}
+
+/**
+ * The platform owner behind the session, even while they are impersonating.
+ *
+ * `requireSuperAdmin()` deliberately fails during impersonation (the acting user is
+ * the customer). The controls that *end* or re-scope an impersonation still have to
+ * work, so they ask for the underlying admin explicitly — and the impersonation row
+ * must belong to that admin, which is what `activeImpersonation` verifies.
+ */
+export async function requireSuperAdminSession(): Promise<{
+  admin: SessionUser;
+  impersonation: Awaited<ReturnType<typeof activeImpersonation>>;
+}> {
+  const admin = getUserBySessionToken(await readSessionToken());
+  if (!admin || !isSuperAdmin(admin)) notFound();
+  const impersonation = activeImpersonation({ sessionId: await readImpersonationId(), adminId: admin.id });
+  return { admin, impersonation };
 }
 
 /** Non-throwing form for callers that want to branch (e.g. rendering a link). */

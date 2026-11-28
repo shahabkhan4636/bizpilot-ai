@@ -213,3 +213,132 @@ test("the platform owner's own workspace is unlimited and badged, and a customer
   await customerContext.close();
   await ownerContext.close();
 });
+
+/** Opens a customer workspace from the admin list, via search. */
+async function openWorkspace(page: Page, query: string) {
+  await page.goto("/admin/workspaces");
+  await page.getByLabel("Search").fill(query);
+  await page.getByRole("button", { name: "Filter" }).click();
+  await page.getByRole("button", { name: "Open" }).first().click();
+  await page.waitForURL(/\/admin\/workspaces\/[0-9a-f-]{8,}/, { timeout: 30_000 });
+}
+
+test("workspaces, users and payments are admin-only and list real data", async ({ browser }) => {
+  const strangerContext = await browser.newContext();
+  const strangerPage = await strangerContext.newPage();
+  await ensureUser(strangerPage, stranger);
+  for (const path of ["/admin/workspaces", "/admin/users", "/admin/payments"]) {
+    const response = await strangerPage.goto(path);
+    expect(response?.status(), `${path} must 404 for a non-admin`).toBe(404);
+  }
+  await strangerContext.close();
+
+  const ownerContext = await browser.newContext();
+  const ownerPage = await ownerContext.newPage();
+  await ensureUser(ownerPage, owner);
+
+  expect((await ownerPage.goto("/admin/workspaces"))?.status()).toBe(200);
+  await expect(ownerPage.getByRole("heading", { name: "Workspaces", exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(ownerPage.getByText(stranger.company).first()).toBeVisible();
+  // The platform owner's own workspace is marked, not billed.
+  await expect(ownerPage.getByText("Platform owner").first()).toBeVisible();
+
+  expect((await ownerPage.goto("/admin/users"))?.status()).toBe(200);
+  await ownerPage.getByLabel("Search").fill(stranger.email);
+  await ownerPage.getByRole("button", { name: "Search" }).click();
+  await expect(ownerPage.getByText(stranger.email).first()).toBeVisible({ timeout: 20_000 });
+
+  expect((await ownerPage.goto("/admin/payments"))?.status()).toBe(200);
+  await expect(ownerPage.getByRole("heading", { name: "Payments", exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(ownerPage.getByRole("button", { name: /Workspace payments/i })).toBeVisible();
+
+  await ownerContext.close();
+});
+
+test("suspending a workspace needs a reason, blocks the customer, and restoring brings it back", async ({ browser }) => {
+  const ownerContext = await browser.newContext();
+  const ownerPage = await ownerContext.newPage();
+  await ensureUser(ownerPage, owner);
+  await openWorkspace(ownerPage, stranger.company);
+
+  // A reason is mandatory: submitting without one must not reach the server action.
+  const reason = "Payment failed after 3 reminders (e2e)";
+  await ownerPage.getByLabel(/Reason for suspending/i).fill(reason);
+  await ownerPage.getByRole("button", { name: /Suspend workspace/i }).click();
+  await ownerPage.waitForURL("**/admin/workspaces/**?done=suspended", { timeout: 30_000 });
+  await expect(ownerPage.getByText(/Workspace suspended/i).first()).toBeVisible({ timeout: 20_000 });
+
+  // The customer is locked out and told why — no 500, no silent redirect.
+  const strangerContext = await browser.newContext();
+  const strangerPage = await strangerContext.newPage();
+  await ensureUser(strangerPage, stranger);
+  await strangerPage.goto("/leads");
+  await strangerPage.waitForURL("**/suspended", { timeout: 30_000 });
+  await expect(strangerPage.getByRole("heading", { name: /workspace is suspended/i })).toBeVisible();
+  await expect(strangerPage.getByText(reason)).toBeVisible();
+
+  // Restore, and the customer is immediately back.
+  await ownerPage.goto(ownerPage.url());
+  await ownerPage.getByLabel(/Reason for restoring/i).fill("Invoice paid — access restored (e2e)");
+  await ownerPage.getByRole("button", { name: /Restore workspace/i }).click();
+  await ownerPage.waitForURL("**?done=restored", { timeout: 30_000 });
+  await expect(ownerPage.getByText(/Workspace restored/i).first()).toBeVisible({ timeout: 20_000 });
+
+  await strangerPage.goto("/leads");
+  await expect(strangerPage.getByRole("heading", { name: "Leads" })).toBeVisible({ timeout: 20_000 });
+
+  await strangerContext.close();
+  await ownerContext.close();
+});
+
+test("impersonation starts read-only, refuses writes, needs a typed confirmation, and is audited", async ({ browser }) => {
+  const ownerContext = await browser.newContext();
+  const ownerPage = await ownerContext.newPage();
+  await ensureUser(ownerPage, owner);
+  await openWorkspace(ownerPage, stranger.company);
+  const workspaceUrl = ownerPage.url();
+
+  await ownerPage.getByRole("button", { name: "Impersonate" }).first().click();
+  await ownerPage.waitForURL("**/dashboard", { timeout: 30_000 });
+
+  // The banner is part of the shell: the owner can never forget where they are.
+  await expect(ownerPage.getByTestId("impersonation-banner")).toBeVisible();
+  await expect(ownerPage.getByText(/Read-only view/i)).toBeVisible();
+
+  // Read-only means read-only in the UI too...
+  await ownerPage.goto("/leads");
+  await expect(ownerPage.getByText(/Read-only access/i).first()).toBeVisible({ timeout: 20_000 });
+  await expect(ownerPage.getByRole("button", { name: "New lead" })).toHaveCount(0);
+
+  // ...and a wrong confirmation word must not unlock writes.
+  await ownerPage.getByRole("button", { name: /Switch to write mode/i }).click();
+  await ownerPage.getByLabel(/Type IMPERSONATE/i).fill("yes");
+  await ownerPage.getByRole("button", { name: /Enable write mode/i }).click();
+  await expect(ownerPage.getByText(/Type IMPERSONATE to confirm/i)).toBeVisible({ timeout: 20_000 });
+  await expect(ownerPage.getByText(/Read-only view/i)).toBeVisible();
+
+  // The exact word does.
+  await ownerPage.getByLabel(/Type IMPERSONATE/i).fill("IMPERSONATE");
+  await ownerPage.getByRole("button", { name: /Enable write mode/i }).click();
+  await expect(ownerPage.getByText(/Write mode — changes are real/i)).toBeVisible({ timeout: 20_000 });
+
+  // A real write now goes through, as the customer.
+  await ownerPage.goto("/leads?new=1");
+  await ownerPage.getByLabel("Name *").fill("Impersonated Lead");
+  await ownerPage.getByLabel("Email").fill(`impersonated.${stamp}@example.com`);
+  await ownerPage.getByLabel("Estimated value").fill("1200");
+  await ownerPage.getByRole("button", { name: "Create lead" }).click();
+  await ownerPage.waitForURL(/\/leads\/[0-9a-f-]{8,}/, { timeout: 30_000 });
+  await expect(ownerPage.getByRole("heading", { name: "Impersonated Lead" })).toBeVisible();
+
+  // Exit returns to the workspace record, and the admin panel works again.
+  await ownerPage.getByRole("button", { name: "Exit" }).click();
+  await ownerPage.waitForURL("**/admin/workspaces**", { timeout: 30_000 });
+  await expect(ownerPage.getByTestId("impersonation-banner")).toHaveCount(0);
+  expect((await ownerPage.goto(workspaceUrl))?.status()).toBe(200);
+
+  // The write is on the record as an impersonated write, not as the customer acting.
+  await expect(ownerPage.getByText("impersonated_write").first()).toBeVisible({ timeout: 20_000 });
+
+  await ownerContext.close();
+});
