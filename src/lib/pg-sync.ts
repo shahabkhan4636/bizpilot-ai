@@ -1,5 +1,11 @@
 import { Worker } from "node:worker_threads";
 import path from "node:path";
+// Side-effect import, never used directly: the connection lives in the worker
+// thread (scripts/pg-worker.mjs), which requires `pg` at runtime. Static tracing
+// cannot see a require inside a file it only copies by path, so importing it here
+// is what makes @vercel/nft ship pg and its transitive dependencies with the
+// function bundle. Without it the worker dies with "Cannot find module 'xtend/mutable'".
+import "pg";
 
 /**
  * A synchronous Postgres client.

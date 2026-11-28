@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Multiple lockfiles exist in this workspace; pin the trace root to this app.
   outputFileTracingRoot: process.cwd(),
-  serverExternalPackages: ["better-sqlite3"],
+  serverExternalPackages: ["better-sqlite3", "pg"],
   /**
    * The Postgres engine runs its connection inside a worker thread
    * (scripts/pg-worker.mjs, see src/lib/pg-sync.ts), and that worker imports
@@ -16,6 +16,10 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/**/*": [
       "./scripts/pg-worker.mjs",
+      // Belt and braces: `pg` is imported statically in src/lib/pg-sync.ts so the
+      // tracer walks its whole tree, and these globs keep the worker's runtime
+      // dependencies present even if a transitive package is skipped.
+      "./node_modules/xtend/**",
       "./node_modules/pg/**",
       "./node_modules/pg-*/**",
       "./node_modules/pgpass/**",
