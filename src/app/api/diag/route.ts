@@ -19,6 +19,31 @@ export async function GET(req: Request) {
     }
   };
 
+  if (mode === "worker") {
+    const { Worker } = await import("node:worker_threads");
+    const workerPath = path.join(process.cwd(), "scripts", "pg-worker.mjs");
+    out.workerPath = workerPath;
+    out.workerExists = fs.existsSync(workerPath);
+    const events: string[] = [];
+    const result = await new Promise((resolve) => {
+      let done = false;
+      const finish = (v: unknown) => { if (!done) { done = true; resolve(v); } };
+      let w: import("node:worker_threads").Worker;
+      try {
+        w = new Worker(workerPath, { workerData: { url: process.env.DATABASE_URL ?? "" } });
+      } catch (e) {
+        return finish({ spawnThrew: String(e).slice(0, 400) });
+      }
+      w.on("online", () => events.push("online"));
+      w.on("message", (m) => { events.push("message"); finish({ message: String(m).slice(0, 120) }); });
+      w.on("error", (e) => { events.push("error"); finish({ error: String(e).slice(0, 400) }); });
+      w.on("exit", (code) => { events.push("exit:" + code); finish({ exitCode: code }); });
+      setTimeout(() => finish({ timeoutAfterMs: 8000 }), 8000);
+    });
+    out.workerTest = { ...(result as object), events };
+    return Response.json(out);
+  }
+
   if (mode === "info") {
     out.cwd = process.cwd();
     out.workerExists = fs.existsSync(path.join(process.cwd(), "scripts", "pg-worker.mjs"));
