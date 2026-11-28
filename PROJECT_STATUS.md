@@ -2,7 +2,12 @@
 
 _Last updated: 2026-08-09 · branch `main` · this file is the continuity record: read it first._
 
-**Newest work:** Phase 5 — the admin surface is real: `/admin/workspaces`,
+**Newest work:** Phase 6 — `DEPLOY-ADMIN.md` (owner launch runbook: Supabase **Session
+pooler**, env table, migrate→deploy→smoke order, day-1 checklist, cron reality, incident
+table, rollback, security hygiene, and an explicit list of what is still blocked) plus
+`scripts/smoke.mjs` / `npm run smoke` (9 real post-deploy checks; 9/9 against a production
+build, exit 1 on failure) and `tests/deploy-docs.test.ts`, which fails the build when the
+code reads an env var documented nowhere. **Earlier:** Phase 5 — the admin surface is real: `/admin/workspaces`,
 `/admin/workspaces/[id]`, `/admin/users` and `/admin/payments` (migration 012 adds
 `organizations.suspension_reason`/`suspended_by` and `impersonation_sessions`).
 Suspend/restore needs a mandatory reason, is audited, notifies and emails the owner, and
@@ -43,10 +48,11 @@ asserted — the verification commands and their real output are in `PHASE-3-REP
 | --- | --- | --- |
 | Types | `npx tsc --noEmit` | ✅ clean, strict, 0 `any` |
 | Lint | `npx eslint .` | ✅ 0 errors / 0 warnings |
-| Unit + integration | `npx vitest run` | ✅ 343 passed, 10 skipped (21 files) |
+| Unit + integration | `npx vitest run` | ✅ 352 passed, 10 skipped (22 files) |
 | E2E on PostgreSQL | `DATABASE_URL=… BIZPILOT_ENGINE=postgres npx playwright test` | ✅ 34 passed |
 | E2E on SQLite | `npx playwright test` | ✅ 34 passed |
 | All gates | `npm run verify` (add `-- --e2e` for the suite) | ✅ green |
+| Post-deploy smoke | `node scripts/smoke.mjs <url>` | ✅ 9/9 against a local production build; exit 1 when a check fails |
 | Production build | `npm run build` | ✅ 36 routes |
 | Readiness probe | `GET /api/readiness` | ✅ 200 with provider warnings |
 | Fresh-database path | `db:migrate` → `seed` → e2e on an empty Postgres | ✅ 37 tables, 83 policies, 12 migrations, 34 e2e journeys |

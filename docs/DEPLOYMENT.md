@@ -1,5 +1,9 @@
 # Deployment
 
+> Going live as the **platform owner** (super-admin, payment collection, smoke test,
+> day-1 checklist, rollback)? Read **`DEPLOY-ADMIN.md`** first — this file is the generic
+> provider/hosting reference.
+
 Target: Vercel (app) + a managed PostgreSQL 15+ (Neon, Supabase, RDS). **SQLite is never used in
 production** — it is a local-development convenience only, because serverless filesystems are
 ephemeral and every request would get a different database.

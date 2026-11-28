@@ -92,8 +92,9 @@ To get an admin panel, set `ADMIN_EMAIL` in `.env.local` **before** signing up w
 | `npm run build` / `npm start` | Production build / serve |
 | `npm run typecheck` | `tsc --noEmit` (strict) |
 | `npm run lint` | ESLint 9 flat config (Next + React hooks + TS rules) |
-| `npm test` | Vitest: unit + integration (185 tests) |
-| `npm run test:e2e` | Playwright against a production build on port 3100 (23 journeys, on SQLite and on Postgres) |
+| `npm test` | Vitest: unit + integration (343 tests + 10 skipped) |
+| `npm run test:e2e` | Playwright against a production build on port 3100 (34 journeys, on SQLite and on Postgres) |
+| `npm run smoke <url>` | Post-deploy check: 9 real requests against a live deployment (`--list` to preview) |
 | `npm run db:migrate` | Apply pending migrations; `--status`, `--down N`, `--to ID`, `--baseline` |
 | `npm run db:schema` | Regenerate `sql/schema.sqlite.sql`; `--check` fails if it is stale |
 | `npm run db:migrate` also seeds the plan catalogue | required: `subscriptions.plan_code` references `plans(code)` |
@@ -111,6 +112,7 @@ To get an admin panel, set `ADMIN_EMAIL` in `.env.local` **before** signing up w
 | --- | --- |
 | `PROJECT_STATUS.md` | picking the work back up — current state, decisions, what is blocked |
 | `docs/DEFINITION-OF-DONE.md` | deciding whether something is actually finished |
+| `DEPLOY-ADMIN.md` | **going live as the platform owner**: Supabase pooler, admin env, smoke test, day-1 checklist, support tools, rollback |
 | `docs/DEPLOYMENT.md` | deploying, configuring providers, rolling back |
 | `docs/DATABASE.md` | migrations, engines, RLS, `--baseline` |
 | `docs/BACKUP-AND-RESTORE.md` | taking or restoring a backup |
@@ -296,7 +298,7 @@ src/
 sql/                   schema.postgres.sql, schema.sqlite.sql, seed_plans.sql
 tests/                 vitest unit + integration + route tests
 e2e/                   playwright suite
-scripts/               migrate.mjs, seed.mjs
+scripts/               migrate.mjs, seed.mjs, smoke.mjs
 ```
 
 Design decisions worth knowing:
@@ -333,6 +335,7 @@ volume, and back them up.
 **GitHub:** this repository is already published at <https://github.com/shahabkhan4636/bizpilot-ai>.
 
 Full runbook, including post-deploy verification and rollback: **`docs/DEPLOYMENT.md`**.
+Owner-specific launch runbook (admin wiring, payments, smoke test): **`DEPLOY-ADMIN.md`**.
 
 **Vercel (shortest path once Postgres is wired):**
 

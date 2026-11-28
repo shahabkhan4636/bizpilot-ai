@@ -5,6 +5,55 @@ platform-owner build-out plan (`PHASE-0-SETUP.md`).
 
 ---
 
+## Phase 6 — deploy runbook and post-deploy smoke test (2026-08-09)
+
+**What changed**
+
+- **`DEPLOY-ADMIN.md`** (new, root): the owner-facing launch runbook — Supabase
+  **Session pooler** (the IPv4 problem that silently blocks a Vercel deploy of the direct
+  connection), the exact environment table, migrate → deploy → smoke order, a 10-minute
+  day-1 checklist (sign up as `ADMIN_EMAIL`, enter payout numbers, decide the Founding
+  offer, verify `/billing/platform`), the Vercel cron reality (Hobby = daily, `vercel.pro.json`
+  = every 10 min), a symptom → first-move incident table, rollback for both deploy and
+  migration, the support tools with the safety rule built into each, security hygiene, and
+  an explicit "what is still not possible" table.
+- **`scripts/smoke.mjs`** + `npm run smoke`: nine real checks against a live deployment —
+  site renders, login renders, **strict CSP with a nonce and no `'unsafe-inline'` for
+  scripts**, `/api/readiness` is `ready: true`, anonymous `/admin` never leaks panel
+  content, `/billing/platform` never exposes payout details without a session, the email
+  cron refuses an unauthenticated request, an unsigned payment webhook is refused, unknown
+  routes 404. `--list` previews without touching the network; exit `0` pass / `1` fail /
+  `2` no URL. Verified **9/9 against a real production build** locally, and the failure
+  path exits **1** against a dead port (proven, not assumed).
+- **`.env.example`**: added the variables the app reads but the file never listed
+  (`SESSION_SECRET`, `LOG_LEVEL`, `SUPPORT_EMAIL`, `DROPBOX_DOWNLOAD_URL`, plus commented
+  `BIZPILOT_DB_FILE` / `BIZPILOT_PG_WORKER`) and a note that production must use the
+  Supabase **Session pooler** string.
+- **`tests/deploy-docs.test.ts`** (new, 9 tests): fails the build if the code reads an
+  environment variable that is documented in neither `.env.example` nor `DEPLOY-ADMIN.md`
+  (verified by temporarily deleting `SESSION_SECRET` from both — the test failed, then
+  passed after restoring); checks the runbook still covers the owner-critical steps, still
+  states what is blocked, and contains **no wallet number, IBAN, Resend key or Stripe key**;
+  and exercises the smoke CLI (`--list`, usage exit code, `package.json` wiring).
+- `README.md` and `docs/DEPLOYMENT.md` link the new runbook; README's script table gained
+  `npm run smoke` and the stale test counts were corrected.
+
+**Why**
+
+Everything built in Phases 1–5 is useless if the owner cannot get it onto a domain without
+guessing. The runbook is the difference between "the code is ready" and "the product is
+live", and the smoke script is how a deploy is judged instead of assumed.
+
+**Test evidence**
+
+- `npx vitest run` → **352 passed / 10 skipped (362 tests, 22 files)** (was 343/10; +9).
+- `npx playwright test` → **34 passed** on SQLite **and** **34 passed** on Postgres.
+- `node scripts/smoke.mjs http://127.0.0.1:3210` against a real `next start` production
+  build → **9/9 passed**; against a closed port → **0/9, exit 1**.
+- `npm run verify` → typecheck, lint, unit tests, schema snapshot, build: **all gates green**.
+
+---
+
 ## Phase 5 — admin workspaces, users, payments, suspension and impersonation (2026-08-09)
 
 **What changed**
