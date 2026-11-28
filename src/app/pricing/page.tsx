@@ -27,7 +27,7 @@ export default function PricingPage() {
           {plans.map((p) => (
             <Card key={p.code} className={p.code === "professional" ? "ring-2 ring-brand-500" : ""}>
               <CardHeader>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <CardTitle>{p.name}</CardTitle>
                   {p.code === "professional" ? <Badge tone="brand">Popular</Badge> : null}
                 </div>

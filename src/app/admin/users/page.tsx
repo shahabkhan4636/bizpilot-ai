@@ -65,7 +65,7 @@ export default async function AdminUsersPage({
         title="Users"
         description="Accounts, email verification and sign-in activity. Changes are made on the workspace, so there is one path per decision."
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Link href="/admin/workspaces"><Button size="sm" variant="outline">Workspaces</Button></Link>
             <Link href="/admin/payments"><Button size="sm" variant="outline">Payments</Button></Link>
           </div>

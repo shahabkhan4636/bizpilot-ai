@@ -109,7 +109,7 @@ export default async function AnalyticsPage() {
         </Card>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Leads" value={String(totals.total)} />
         <StatCard label="Win rate" value={`${percent(totals.won, totals.total)}%`} hint={`${totals.won} won / ${totals.lost} lost`} tone="good" />
         <StatCard label="Average deal" value={formatMoney(Math.round(totals.avg_value))} />

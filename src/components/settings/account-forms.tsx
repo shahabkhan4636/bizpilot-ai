@@ -72,7 +72,7 @@ export function DeleteAccountCard({ role, memberCount }: { role: string; memberC
             <Label htmlFor="delete_confirm">Type DELETE to confirm</Label>
             <Input id="delete_confirm" name="confirm" required placeholder="DELETE" />
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button type="submit" size="sm" variant="danger" disabled={pending}>
               <Trash2 className="h-4 w-4" /> {pending ? "Deleting…" : "Delete permanently"}
             </Button>

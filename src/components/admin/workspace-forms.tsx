@@ -145,7 +145,7 @@ export function AdminPager({
       <span>
         {first}–{last} of {total}
       </span>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {page > 1 ? (
           <a className="underline" href={build(page - 1)}>← Previous</a>
         ) : null}

@@ -106,7 +106,7 @@ export default async function AutomationsPage() {
         </div>
       ) : null}
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Automations" value={String(automations.length)} hint={`Limit ${ctx.plan.automation_limit || "—"}`} />
         <StatCard label="Active" value={String(active)} tone={active > 0 ? "good" : "default"} />
         <StatCard label="Total runs" value={String(totalRuns)} />

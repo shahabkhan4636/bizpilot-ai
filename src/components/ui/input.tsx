@@ -2,7 +2,10 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 const base =
-  "flex h-10 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--surface))] px-3 py-2 text-sm placeholder:text-[hsl(var(--fg-muted))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:cursor-not-allowed disabled:opacity-50";
+  // min-w-0 matters: a <select> keeps an intrinsic min-width from its longest option
+  // (the timezone list is ~455px), which made the whole page scroll sideways on a
+  // phone even though every field is w-full.
+  "flex h-10 w-full min-w-0 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--surface))] px-3 py-2 text-sm placeholder:text-[hsl(var(--fg-muted))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:cursor-not-allowed disabled:opacity-50";
 
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
   ({ className, ...props }, ref) => <input ref={ref} className={cn(base, className)} {...props} />

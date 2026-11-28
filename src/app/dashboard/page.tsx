@@ -126,7 +126,7 @@ export default async function DashboardPage() {
         </Card>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Total leads" value={String(totals.total)} hint={`${newThisWeek} added in the last 7 days`} />
         <StatCard label="Open pipeline" value={formatMoney(totals.pipeline)} hint={`${totals.open} open lead${totals.open === 1 ? "" : "s"}`} />
         <StatCard label="Won revenue" value={formatMoney(totals.won_value)} hint={`${totals.won} won · ${totals.lost} lost`} tone="good" />

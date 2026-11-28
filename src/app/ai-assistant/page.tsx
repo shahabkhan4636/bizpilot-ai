@@ -46,7 +46,7 @@ export default async function AiAssistantPage({ searchParams }: { searchParams: 
         description="Nine content types with tone, language and objective controls. Every send needs human approval."
       />
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card><CardContent className="pt-4">
           <p className="text-xs uppercase tracking-wide text-[hsl(var(--fg-muted))]">AI provider</p>
           <p className="mt-1 flex items-center gap-2 text-sm font-semibold">

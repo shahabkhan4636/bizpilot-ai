@@ -4,7 +4,13 @@ import { cn } from "@/lib/utils";
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface))] shadow-sm", className)}
+      className={cn(
+        // min-w-0: a card is often a grid/flex item, and without this its min-content
+        // (a wide table, a long email) pushes the whole page sideways on a phone
+        // instead of scrolling inside its own box.
+        "min-w-0 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface))] shadow-sm",
+        className
+      )}
       {...props}
     />
   );

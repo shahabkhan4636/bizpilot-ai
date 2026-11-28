@@ -230,7 +230,7 @@ export function RefundPaymentForm({ requestId, paidPkr, remainingPkr }: { reques
           placeholder={`Paid Rs ${paidPkr.toLocaleString()} — why is it going back?`}
         />
       </div>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button type="submit" size="sm" variant="danger" disabled={pending}>
           {pending ? "Recording…" : "Record refund"}
         </Button>

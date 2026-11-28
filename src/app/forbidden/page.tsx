@@ -29,7 +29,7 @@ export default async function ForbiddenPage({
             Nothing was changed. Ask a workspace owner or admin if you need this access — they can
             change your role from Settings → Team.
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Link href="/dashboard" className={buttonVariants({ size: "sm" })}>
               <Button size="sm" variant="outline">Back to dashboard</Button>
             </Link>

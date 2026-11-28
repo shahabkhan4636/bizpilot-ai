@@ -150,7 +150,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
         </Card>
       </div>
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Current plan" value={ctx.plan.name} hint={sub ? `${sub.status}${sub.cancel_at_period_end ? " · cancels at period end" : ""}` : "no subscription row"} />
         <StatCard label="Billing cycle" value={cycle} hint={priceId ? `price ${priceId.slice(0, 14)}…` : "no price ID configured"} />
         <StatCard label="Leads used" value={`${ctx.usage.leads} / ${limitLabel(ctx.plan.lead_limit)}`} tone={ctx.usage.leads >= ctx.plan.lead_limit ? "warn" : "default"} />

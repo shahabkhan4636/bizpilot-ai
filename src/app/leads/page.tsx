@@ -221,7 +221,7 @@ export default async function LeadsPage({
       {pages > 1 ? (
         <div className="mt-4 flex items-center justify-between text-sm">
           <p className="text-[hsl(var(--fg-muted))]">Page {page} of {pages}</p>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {page > 1 ? <Link href={queryFor(page - 1)}><Button size="sm" variant="outline">Previous</Button></Link> : null}
             {page < pages ? <Link href={queryFor(page + 1)}><Button size="sm" variant="outline">Next</Button></Link> : null}
           </div>

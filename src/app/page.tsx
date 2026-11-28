@@ -64,7 +64,7 @@ export default function HomePage() {
           <div className="mx-auto max-w-6xl px-4 sm:px-6">
             <h2 className="text-2xl font-bold tracking-tight">Plans that scale with the pipeline</h2>
             <p className="mt-2 text-sm text-[hsl(var(--fg-muted))]">Prices are stored in the database and editable from the admin panel — no code changes needed.</p>
-            <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
               {plans.map((p) => (
                 <Card key={p.code} className={p.code === "professional" ? "ring-2 ring-brand-500" : ""}>
                   <CardHeader>

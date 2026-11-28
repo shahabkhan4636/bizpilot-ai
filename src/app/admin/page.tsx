@@ -86,7 +86,7 @@ export default async function AdminPage() {
         title="Admin panel"
         description="Platform-wide view. Access is verified on the server for every request, not just hidden in the UI."
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Link href="/admin/workspaces"><Button size="sm" variant="outline">Workspaces</Button></Link>
             <Link href="/admin/users"><Button size="sm" variant="outline">Users</Button></Link>
             <Link href="/admin/payments"><Button size="sm" variant="outline">Payments</Button></Link>
@@ -97,7 +97,7 @@ export default async function AdminPage() {
         }
       />
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Users" value={String(counts.users)} />
         <StatCard label="Workspaces" value={String(counts.orgs)} />
         <StatCard label="Leads" value={String(counts.leads)} />

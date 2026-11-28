@@ -38,7 +38,7 @@ export default function RouteError({error, reset}: {error: Error & { digest?: st
           <Alert tone="danger" title="Reference">
             <code className="text-xs">{error.digest ?? error.message.slice(0, 120)}</code>
           </Alert>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button onClick={reset}>Try again</Button>
             <Link
               href="/dashboard"

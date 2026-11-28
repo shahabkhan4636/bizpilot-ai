@@ -115,7 +115,7 @@ export default async function AdminPlatformPaymentsPage({
         </div>
       )}
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Waiting for approval" value={String(pending.length)} hint={`Rs ${Math.round(pendingValue / 100).toLocaleString()} claimed`} />
         <StatCard label="Founding slots used" value={`${granted} / ${settings.founding_member_slots}`} hint={`${slotsLeft} left`} />
         <StatCard

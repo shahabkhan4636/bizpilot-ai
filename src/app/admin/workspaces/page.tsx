@@ -74,14 +74,14 @@ export default async function AdminWorkspacesPage({
         title="Workspaces"
         description="Every customer workspace with its plan, usage and suspension state. Open one to act on it."
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Link href="/admin/users"><Button size="sm" variant="outline">Users</Button></Link>
             <Link href="/admin/payments"><Button size="sm" variant="outline">Payments</Button></Link>
           </div>
         }
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Workspaces" value={String(counts.workspaces)} />
         <StatCard label="Suspended" value={String(counts.suspended)} tone={counts.suspended > 0 ? "warn" : "default"} />
         <StatCard label="Claims waiting" value={String(counts.pendingClaims)} hint="platform payments" />
