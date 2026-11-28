@@ -4,6 +4,29 @@ const nextConfig: NextConfig = {
   // Multiple lockfiles exist in this workspace; pin the trace root to this app.
   outputFileTracingRoot: process.cwd(),
   serverExternalPackages: ["better-sqlite3"],
+  /**
+   * The Postgres engine runs its connection inside a worker thread
+   * (scripts/pg-worker.mjs, see src/lib/pg-sync.ts), and that worker imports
+   * `pg` at runtime. File tracing cannot see either dependency statically, so
+   * on Vercel the function shipped without them: the worker failed to start,
+   * the main thread waited on Atomics until the 120s timeout, and every API
+   * route hung. Ship them explicitly — worker file plus `pg` and its
+   * transitive dependencies.
+   */
+  outputFileTracingIncludes: {
+    "/**/*": [
+      "./scripts/pg-worker.mjs",
+      "./node_modules/pg/**",
+      "./node_modules/pg-*/**",
+      "./node_modules/pgpass/**",
+      "./node_modules/split2/**",
+      "./node_modules/pg-int8/**",
+      "./node_modules/postgres-array/**",
+      "./node_modules/postgres-bytea/**",
+      "./node_modules/postgres-date/**",
+      "./node_modules/postgres-interval/**",
+    ],
+  },
   eslint: { ignoreDuringBuilds: false },
   poweredByHeader: false,
   async headers() {
