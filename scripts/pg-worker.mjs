@@ -28,7 +28,30 @@ pg.types.setTypeParser(23, (v) => (v === null ? null : Number(v)));      // int4
 pg.types.setTypeParser(700, (v) => (v === null ? null : Number(v)));     // float4
 pg.types.setTypeParser(701, (v) => (v === null ? null : Number(v)));     // float8
 
-const client = new pg.Client({ connectionString: url, application_name: "bizpilot-app" });
+/**
+ * Supabase's direct host (`db.<ref>.supabase.co`) is IPv6-only, and serverless
+ * platforms such as Vercel have no IPv6 egress — the connection dies with
+ * ENOTFOUND and, without a connect timeout, the bridge waits its full 120s
+ * before the request fails. Use the pooler host instead
+ * (`aws-0-<region>.pooler.supabase.com`) and fail fast if it is wrong.
+ */
+const parsedUrl = (() => {
+  try {
+    return new URL(url);
+  } catch {
+    return null;
+  }
+})();
+const localHost = parsedUrl ? ["localhost", "127.0.0.1", "::1"].includes(parsedUrl.hostname) : false;
+const sslInUrl = /[?&]sslmode=/.test(url);
+const client = new pg.Client({
+  connectionString: url,
+  application_name: "bizpilot-app",
+  connectionTimeoutMillis: 15000,
+  // Managed Postgres requires TLS; `sslmode=require` (pg) also does not verify
+  // the certificate, so this is the same protection level, just spelled out.
+  ...(sslInUrl || localHost ? {} : { ssl: { rejectUnauthorized: false } }),
+});
 
 /** Postgres wants $1,$2…; the app writes ?. Never rewrites inside quoted text. */
 function toPositional(sql) {
@@ -78,7 +101,15 @@ async function applySchema() {
 async function handle(msg) {
   switch (msg.mode) {
     case "init": {
-      await client.connect();
+      try {
+        await client.connect();
+      } catch (connectError) {
+        const hint =
+          parsedUrl && !localHost && !sslInUrl && /ENOTFOUND|EHOSTUNREACH|ETIMEDOUT/.test(String(connectError))
+            ? ` — cannot reach ${parsedUrl.hostname}. Supabase direct hosts are IPv6-only; use the pooler host (aws-0-<region>.pooler.supabase.com) in DATABASE_URL.`
+            : "";
+        throw new Error(`${String(connectError?.message ?? connectError)}${hint}`);
+      }
       const { rows } = await client.query("select current_database() as db, current_user as who");
       if (msg.applySchema) await applySchema();
       return { ...rows[0], schema: Boolean(msg.applySchema) };

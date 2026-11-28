@@ -1,6 +1,7 @@
 // TEMPORARY diagnostic route — deleted as soon as the cause is known.
 import fs from "node:fs";
 import path from "node:path";
+import net from "node:net";
 import { Worker } from "node:worker_threads";
 
 export const runtime = "nodejs";
@@ -24,6 +25,20 @@ export async function GET() {
   out.workerPath = workerPath;
   out.workerExists = fs.existsSync(workerPath);
   out.pgExists = fs.existsSync(path.join(process.cwd(), "node_modules", "pg", "package.json"));
+
+  // 0) raw TCP reachability of both host shapes from this runtime
+  const tcp = (host: string, port: number) =>
+    new Promise((resolve) => {
+      const s = net.connect({ host, port });
+      const finish = (v: unknown) => { s.destroy(); resolve(v); };
+      s.setTimeout(6000, () => finish({ host, error: "timeout" }));
+      s.on("connect", () => finish({ host, ok: true }));
+      s.on("error", (e) => finish({ host, error: String(e).slice(0, 160) }));
+    });
+  out.tcp = {
+    direct: await tcp("db.mpyuknincvfrfrvanpio.supabase.co", 5432),
+    pooler: await tcp("aws-0-us-east-1.pooler.supabase.com", 5432),
+  };
 
   // 1) direct async pg connect
   const t0 = Date.now();
