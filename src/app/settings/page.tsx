@@ -12,6 +12,9 @@ import { InviteMemberForm } from "@/components/settings/invite-form";
 import { VerifyEmailCard, DeleteAccountCard } from "@/components/settings/account-forms";
 import { isEmailVerified } from "@/lib/email-verification";
 import { revokeInviteAction } from "@/lib/actions/invites";
+import { CopyLinkButton } from "@/components/proposals/proposal-actions";
+import { isAiConfigured } from "@/lib/ai";
+import { appUrl } from "@/lib/app-url";
 import { all, get } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 
@@ -19,8 +22,8 @@ export const metadata: Metadata = { title: "Settings", robots: { index: false } 
 
 export default async function SettingsPage() {
   const ctx = await loadAppContext();
-  const org = get<{ name: string; timezone: string; currency: string; business_type: string | null; website: string | null; phone: string | null; created_at: string }>(
-    "select name, timezone, currency, business_type, website, phone, created_at from organizations where id = ?",
+  const org = get<{ name: string; slug: string; timezone: string; currency: string; business_type: string | null; website: string | null; phone: string | null; created_at: string }>(
+    "select name, slug, timezone, currency, business_type, website, phone, created_at from organizations where id = ?",
     [ctx.orgId]
   );
   const members = all<{ user_id: string; email: string; full_name: string | null; role: string; created_at: string }>(
@@ -31,6 +34,8 @@ export default async function SettingsPage() {
   );
 
   const isOwner = ctx.membership.role === "owner";
+  // Every workspace gets a public chat link; without a row there is nothing to show.
+  const chatUrl = org ? `${appUrl()}/chat/${org.slug}` : "";
   const invites = all<{ id: string; email: string; role: string; expires_at: string; created_at: string }>(
     `select id, email, role, expires_at, created_at from org_invites
       where organization_id = ? and accepted_at is null and expires_at > ? order by created_at desc`,
@@ -163,6 +168,37 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent>
           <VerifyEmailCard verified={isEmailVerified(ctx.user.id)} email={ctx.user.email} />
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Website chat (LeadHunter)</CardTitle>
+          <CardDescription>
+            A public chat page that qualifies visitors and saves them as leads in this workspace.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="rounded-lg bg-[hsl(var(--muted))] px-2 py-1 text-xs">{chatUrl}</code>
+            <CopyLinkButton url={chatUrl} />
+          </div>
+          <p className="text-[hsl(var(--fg-muted))]">
+            Share this link, or embed it on your site with{" "}
+            <code className="rounded bg-[hsl(var(--muted))] px-1">
+              {`<iframe src="${chatUrl}" style="width:100%;height:640px;border:0"></iframe>`}
+            </code>
+          </p>
+          {isAiConfigured() ? (
+            <p className="text-[hsl(var(--fg-muted))]">
+              AI is configured. Qualified visitors become leads with source <b>ai-chat</b>, and you get a notification.
+            </p>
+          ) : (
+            <Alert tone="warning" title="AI is not configured">
+              Add <code>AI_API_KEY</code> to the deployment and the chat switches on. Until then the page tells visitors
+              the assistant is unavailable instead of pretending to answer.
+            </Alert>
+          )}
         </CardContent>
       </Card>
 
