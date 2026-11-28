@@ -1,0 +1,17 @@
+# Never upload local artefacts or data to Vercel.
+# (Production runs on Postgres via DATABASE_URL; the SQLite files are dev-only.)
+node_modules/
+.next/
+out/
+dist/
+data/
+*.db
+*.db-shm
+*.db-wal
+test-results/
+playwright-report/
+coverage/
+.env
+.env.local
+*.log
+.git/
